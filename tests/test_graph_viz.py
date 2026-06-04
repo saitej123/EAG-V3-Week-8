@@ -52,6 +52,34 @@ def test_graph_viz_payload_hello_shape(tmp_path, monkeypatch):
     assert payload["stats"]["status_counts"]["complete"] == 1
     assert len(payload["memory_hits"]) == 1
     assert "Attention" in payload["memory_hits"][0]["preview"]
+    assert "resumable" in payload
+    assert payload["nodes"][0].get("result_preview") is not None
+    assert all(n.get("position") for n in payload["nodes"])
+    coords = {(n["position"]["x"], n["position"]["y"]) for n in payload["nodes"]}
+    assert len(coords) == len(payload["nodes"])
+    assert payload["nodes"][0]["status_label"] == "done"
+
+
+def test_graph_viz_shows_running_from_disk(tmp_path, monkeypatch):
+    from cognitive_dag import persistence as pers_mod
+
+    monkeypatch.setattr(pers_mod, "SESSIONS_DIR", tmp_path / "sessions")
+    sid = "dag_running_viz"
+    store = SessionStore(sid)
+    g = Graph(SkillRegistry())
+    p = g.add_node_from_spec(NodeSpec(skill="planner", inputs=["USER_QUERY"], metadata={"label": "planner"}), node_id="n:1")
+    f = g.add_node_from_spec(NodeSpec(skill="formatter", inputs=["n:1"], metadata={"label": "out"}), node_id="n:2")
+    g.dg.add_edge(p, f)
+    store.save_query("test")
+    store.save_graph(g.dg)
+    store.save_node_state(NodeState(node_id="n:1", skill="planner", status=NodeStatus.complete, output="{}"))
+    store.save_node_state(NodeState(node_id="n:2", skill="formatter", status=NodeStatus.running, output=None))
+
+    payload = graph_viz_payload(sid)
+    fmt = next(n for n in payload["nodes"] if n["id"] == "n:2")
+    assert fmt["status"] == "running"
+    assert fmt["status_label"] == "run"
+    assert payload["stats"]["status_counts"]["running"] == 1
 
 
 def test_list_dag_sessions_orders_newest(tmp_path, monkeypatch):

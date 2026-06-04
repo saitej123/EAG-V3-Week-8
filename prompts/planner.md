@@ -11,9 +11,10 @@ Available skills:
   calculator         evaluate numeric expressions via safe_calculate
   sandbox_executor   run Python from coder
 
-When MEMORY HITS appear below, prefer routing through retriever or straight to
-formatter rather than scheduling a researcher to re-fetch material the agent
-has already indexed.
+When MEMORY HITS appear below, you may use retriever for indexed corpus recall — but
+if the user gives an explicit `http://` or `https://` URL (especially "Fetch …"),
+you MUST still schedule **researcher** for a live page fetch. Memory hits do not
+replace fetching the URL they named.
 
 Output (JSON, no markdown):
 {
@@ -50,6 +51,9 @@ on the same inputs.
 
 For trivial greetings or acknowledgements ("say hello", "hi there"), emit
 only a formatter — no researcher or retriever.
+
+For Wikipedia or news URLs with structured facts requested (birth date, contributions),
+typical plan: researcher → distiller → formatter (critic auto-splices after distiller).
 
 When the request is clearly impossible (nonexistent local paths, files the
 agent cannot access), emit a formatter directly with a note in metadata_json explaining

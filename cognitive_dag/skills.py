@@ -31,12 +31,56 @@ from pydantic import ValidationError
 from .dag_schemas import AgentResult, CoderOutput, CriticVerdict, NodeSpec, PlannerOutput, SkillConfig
 from .paths import ROOT
 from .sandbox import run_python
-from .schemas import MemoryItem, ToolCall
+from .schemas import Goal, MemoryItem, ToolCall
+from .search_providers import enrich_tool_call, extract_http_urls
 
 CONFIG_PATH = ROOT / "agent_config.yaml"
 PROMPTS_DIR = ROOT / "prompts"
 MEMORY_PREVIEW_CHARS = 400
 MAX_TOOL_ROUNDS = 6
+FETCH_PAGE_CHARS_FOR_DOWNSTREAM = 20_000
+
+
+def _parse_fetch_json_text(raw: str) -> str:
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return str(data.get("text") or raw)
+    except json.JSONDecodeError:
+        pass
+    return raw
+
+
+def _fetch_page_body(
+    desc: str,
+    art_id: str | None,
+    get_bytes: Callable[[str], bytes | None] | None,
+) -> str:
+    """Full page text for distiller — load artifact when MCP stored a large fetch."""
+    if art_id and get_bytes:
+        blob = get_bytes(art_id)
+        if blob:
+            return _parse_fetch_json_text(blob.decode("utf-8", errors="replace"))[
+                :FETCH_PAGE_CHARS_FOR_DOWNSTREAM
+            ]
+    if desc and not desc.startswith("[artifact "):
+        return _parse_fetch_json_text(desc)[:FETCH_PAGE_CHARS_FOR_DOWNSTREAM]
+    return (desc or "").strip()
+
+
+def fetch_url_succeeded(desc: str, art_id: str | None, *, body: str | None = None) -> bool:
+    """True when fetch_url returned enough content for downstream distiller."""
+    text = (body if body is not None else desc or "").strip()
+    if art_id:
+        return len(text) >= 200 or not text.startswith("[")
+    low = text.lower()
+    if not text or low.startswith("[search stored") or "connection failed" in low[:120]:
+        return False
+    return len(text) >= 400
+
+
+def explicit_url_fetch_mode(skill_name: str, user_query: str, sub_query: str) -> bool:
+    return skill_name == "researcher" and bool(extract_http_urls(f"{sub_query}\n{user_query}"))
 
 
 # ── catalogue ────────────────────────────────────────────────────────────────
@@ -280,6 +324,36 @@ class SkillRunContext:
     failure_report: str | None = None
 
 
+def _dag_enrich_tool_call(tc: ToolCall, *, user_query: str, sub_query: str) -> ToolCall:
+    goal = Goal(id="dag", text=(sub_query or user_query).strip()[:500] or user_query)
+    return enrich_tool_call(tc, goal=goal, user_query=user_query)
+
+
+def _auto_tool_for_web_skill(
+    skill: Skill,
+    *,
+    user_query: str,
+    sub_query: str,
+    skip_fetch: bool = False,
+) -> ToolCall | None:
+    """When the model skips tools, still fetch/search if the sub-question needs the web."""
+    if skill.name not in {"researcher", "browser"}:
+        return None
+    combined = f"{sub_query}\n{user_query}"
+    urls = extract_http_urls(combined)
+    if skip_fetch and urls:
+        return None
+    if urls and "fetch_url" in skill.tools_allowed:
+        return ToolCall(name="fetch_url", arguments={"url": urls[0]})
+    if "web_search" in skill.tools_allowed and any(
+        k in combined.lower()
+        for k in ("population", "fetch", "http", "wikipedia", "current", "find ", "search")
+    ):
+        q = (sub_query or user_query).strip()[:280]
+        return ToolCall(name="web_search", arguments={"query": q, "max_results": 5})
+    return None
+
+
 async def _tool_loop(
     skill: Skill,
     prompt: str,
@@ -287,8 +361,14 @@ async def _tool_loop(
     *,
     node_id: str,
     sub_query: str,
-) -> str:
+) -> tuple[str, str | None]:
     context = prompt
+    last_art_id: str | None = None
+    single_url = explicit_url_fetch_mode(skill.name, ctx.user_query, sub_query)
+    fetched_once = False
+    last_fetch_body = ""
+    get_bytes = getattr(ctx.artifacts, "get_bytes", None)
+
     for round_i in range(MAX_TOOL_ROUNDS):
         text = await asyncio.to_thread(
             ctx.llm.chat,
@@ -299,15 +379,42 @@ async def _tool_loop(
         )
         tc = _parse_tool_call(text)
         if tc is None or tc.name not in skill.tools_allowed:
-            return text
+            if fetched_once and single_url:
+                return (last_fetch_body or text, last_art_id)
+            tc = _auto_tool_for_web_skill(
+                skill,
+                user_query=ctx.user_query,
+                sub_query=sub_query,
+                skip_fetch=fetched_once and single_url,
+            )
+            if tc is None:
+                return (text, last_art_id)
+            logger.info(f"[dag] {node_id} ({skill.name}) auto tool: {tc.name}")
+        elif fetched_once and single_url and tc.name == "fetch_url":
+            logger.info(f"[dag] {node_id} ({skill.name}) ignoring repeat fetch_url — page already loaded")
+            return (last_fetch_body, last_art_id)
+
+        tc = _dag_enrich_tool_call(tc, user_query=ctx.user_query, sub_query=sub_query)
         desc, art_id = await ctx.action.execute(
             tc,
             store=ctx.artifacts,
-            fallback_query=sub_query,
+            fallback_query=sub_query or ctx.user_query,
         )
+        if art_id:
+            last_art_id = art_id
         logger.info(f"[dag] {node_id} ({skill.name}) tool round {round_i + 1}: {tc.name}")
+        if tc.name == "fetch_url":
+            body = _fetch_page_body(desc, art_id, get_bytes)
+            if fetch_url_succeeded(desc, art_id, body=body):
+                fetched_once = True
+                last_fetch_body = body or desc
+                if single_url:
+                    logger.info(
+                        f"[dag] {node_id} ({skill.name}) fetch_url complete — single fetch for explicit URL"
+                    )
+                    return (last_fetch_body, last_art_id)
         context = f"{context}\n\nTOOL {tc.name} result:\n{desc[:8000]}\n\nContinue or give final answer."
-    return text
+    return (text, last_art_id)
 
 
 async def run_skill(
@@ -377,9 +484,10 @@ async def run_skill(
     elif skill.name == "coder":
         schema = CoderOutput
 
+    tool_art_id: str | None = None
     try:
         if skill.tools_allowed:
-            text = await _tool_loop(
+            text, tool_art_id = await _tool_loop(
                 skill,
                 rendered,
                 ctx,
@@ -459,6 +567,7 @@ async def run_skill(
                 agent_name=skill.name,
                 status="complete",
                 output=parsed,
+                artifact_id=tool_art_id if skill.tools_allowed else None,
                 successors=successors,
                 elapsed_s=time.time() - started,
             ),

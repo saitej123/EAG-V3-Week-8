@@ -171,7 +171,42 @@ class SessionStore:
             state = NodeState.model_validate_json(path.read_text(encoding="utf-8"))
             if state.status == NodeStatus.running:
                 state.status = NodeStatus.pending
+                state.started_at = None
                 self.save_node_state(state)
+
+    def reset_from_node(self, node_id: str) -> list[str]:
+        """Stop in-flight work and reset *node_id* plus all descendants to pending (upstream stays done)."""
+        self.reset_running_to_pending()
+        graph = self.load_graph()
+        if node_id not in graph:
+            raise SessionLoadError(f"Unknown node {node_id!r} in session {self.session_id}")
+        targets = set(nx.descendants(graph, node_id)) | {node_id}
+        states = self.load_all_node_states()
+        reset_ids: list[str] = []
+        for nid in nx.topological_sort(graph):
+            if nid not in targets:
+                continue
+            data = graph.nodes[nid]
+            st = states.get(nid)
+            if st is None:
+                st = NodeState(
+                    node_id=nid,
+                    skill=str(data.get("skill") or "?"),
+                    inputs=list(data.get("inputs") or []),
+                    metadata=dict(data.get("metadata") or {}),
+                    status=NodeStatus.pending,
+                )
+            else:
+                st.status = NodeStatus.pending
+                st.output = None
+                st.error = None
+                st.elapsed_s = None
+                st.started_at = None
+                st.finished_at = None
+                st.artifact_id = None
+            self.save_node_state(st)
+            reset_ids.append(nid)
+        return reset_ids
 
     @property
     def memory_hits_path(self) -> Path:

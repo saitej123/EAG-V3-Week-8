@@ -497,6 +497,10 @@ def enrich_tool_call(tc: ToolCall, *, goal: Goal, user_query: str) -> ToolCall:
         url = str(args.get("url") or "").strip()
         if not url and args.get("query"):
             args["url"] = str(args["query"]).strip()
+        if not url:
+            urls = extract_http_urls(f"{user_query}\n{goal.text}")
+            if urls:
+                args["url"] = urls[0]
 
     elif name == "fetch_urls":
         urls = args.get("urls")
@@ -529,6 +533,24 @@ _SANDBOX_PATH_RE = re.compile(
     r"\b((?:papers|research_papers|rag_corpus|uploads)/[\w.\-]+(?:\.[\w.\-]+)?)\b",
     re.I,
 )
+
+
+_HTTP_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+", re.IGNORECASE)
+
+
+def extract_http_urls(text: str) -> list[str]:
+    """Return http(s) URLs from user text in document order (deduped)."""
+    if not text:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in _HTTP_URL_RE.finditer(text):
+        url = m.group(0).rstrip(".,;)")
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        out.append(url)
+    return out
 
 
 def extract_sandbox_paths(text: str) -> list[str]:

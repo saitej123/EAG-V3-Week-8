@@ -1,4 +1,4 @@
-"""Serialize persisted DAG sessions for the Web UI (vis-network)."""
+"""Serialize persisted DAG sessions for the Web UI (Cytoscape.js + dagre)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 import networkx as nx
 
-from .dag_schemas import AgentResult, NodeStatus
+from .dag_schemas import AgentResult, NodeState, NodeStatus
 from . import persistence
 from .persistence import SessionLoadError, SessionStore
 
@@ -43,17 +43,66 @@ _STATUS_BORDERS: dict[str, str] = {
     "skipped": "#d4d4d8",
 }
 
+# UI legend: done / run / wait / fail (maps from NodeStatus values on disk)
+_STATUS_LABEL: dict[str, str] = {
+    "pending": "wait",
+    "running": "run",
+    "complete": "done",
+    "failed": "fail",
+    "skipped": "skip",
+}
+
+
+def _normalize_status(raw: str) -> str:
+    s = (raw or "pending").strip().lower()
+    if s in _STATUS_COLORS:
+        return s
+    aliases = {
+        "done": "complete",
+        "wait": "pending",
+        "run": "running",
+        "fail": "failed",
+    }
+    return aliases.get(s, "pending")
+
+
+def status_ui_label(status: str) -> str:
+    return _STATUS_LABEL.get(_normalize_status(status), status)
+
+
+def _layered_positions(graph: nx.DiGraph) -> dict[str, dict[str, float]]:
+    """Deterministic top-down coordinates — Cytoscape preset fallback if dagre stacks nodes."""
+    if graph.number_of_nodes() == 0:
+        return {}
+    levels: dict[str, int] = {}
+    try:
+        order = list(nx.topological_sort(graph))
+    except nx.NetworkXUnfeasible:
+        order = list(graph.nodes())
+    for nid in order:
+        preds = list(graph.predecessors(nid))
+        levels[nid] = max((levels[p] + 1 for p in preds), default=0)
+    by_level: dict[int, list[str]] = {}
+    for nid, lv in levels.items():
+        by_level.setdefault(lv, []).append(nid)
+    pos: dict[str, dict[str, float]] = {}
+    for lv, nids in sorted(by_level.items()):
+        for i, nid in enumerate(sorted(nids, key=str)):
+            pos[nid] = {"x": float(i * 240), "y": float(lv * 150)}
+    return pos
+
 
 def _node_status(skill: str, graph: nx.DiGraph, nid: str, states: dict[str, Any]) -> str:
+    """Prefer persisted node state files over embedded graph.result (stale mid-wave)."""
     if nid in states:
         st = states[nid]
         raw = st.status.value if hasattr(st.status, "value") else str(st.status)
-        return raw
+        return _normalize_status(raw)
     result = graph.nodes[nid].get("result")
     if isinstance(result, AgentResult):
-        return result.status.value
+        return _normalize_status(result.status.value)
     if isinstance(result, dict):
-        return str(result.get("status") or "pending")
+        return _normalize_status(str(result.get("status") or "pending"))
     return "pending"
 
 
@@ -86,22 +135,41 @@ def _session_stats(states: dict[str, Any]) -> dict[str, Any]:
     return {"status_counts": counts, "max_node_elapsed_s": round(wall, 2)}
 
 
+def _preview_text(raw: Any) -> str:
+    if raw is None:
+        return ""
+    if isinstance(raw, dict):
+        if not raw:
+            return ""
+        try:
+            text = json.dumps(raw, ensure_ascii=False)
+        except (TypeError, ValueError):
+            text = str(raw)
+    else:
+        text = str(raw).strip()
+    if text in ("{}", "[]", '""', "''", "None"):
+        return ""
+    return text[:280] + ("…" if len(text) > 280 else "")
+
+
 def _result_preview(graph: nx.DiGraph, nid: str, states: dict[str, Any]) -> str:
     if nid in states:
         st = states[nid]
         if st.error:
             return f"Error: {st.error[:200]}"
-        if st.output:
-            text = str(st.output)
-            return text[:280] + ("…" if len(text) > 280 else "")
+        preview = _preview_text(st.output)
+        if preview:
+            return preview
+        if getattr(st, "status", None) and str(getattr(st.status, "value", st.status)) == "running":
+            return "(running…)"
     result = graph.nodes[nid].get("result")
     if isinstance(result, AgentResult):
         if result.error:
             return f"Error: {result.error[:200]}"
-        if result.output:
-            text = str(result.output)
-            return text[:280] + ("…" if len(text) > 280 else "")
-    return ""
+        preview = _preview_text(result.output)
+        if preview:
+            return preview
+    return "(no output yet)"
 
 
 def _graph_node_count(graph_path: Path) -> int:
@@ -110,6 +178,205 @@ def _graph_node_count(graph_path: Path) -> int:
         return len(data.get("nodes", []))
     except (json.JSONDecodeError, OSError):
         return 0
+
+
+def _status_counts_for_graph(graph: nx.DiGraph, states: dict[str, Any]) -> tuple[dict[str, int], dict[str, str]]:
+    """Count statuses for every node in graph.json (not only state files on disk)."""
+    counts = {"complete": 0, "running": 0, "pending": 0, "failed": 0, "skipped": 0}
+    by_nid: dict[str, str] = {}
+    for nid, data in graph.nodes(data=True):
+        skill = str(data.get("skill") or "?")
+        status = _node_status(skill, graph, nid, states)
+        by_nid[nid] = status
+        if status in counts:
+            counts[status] += 1
+    return counts, by_nid
+
+
+def _formatter_terminal_complete(graph: nx.DiGraph, by_nid: dict[str, str]) -> bool:
+    formatter_ids = [nid for nid, data in graph.nodes(data=True) if str(data.get("skill") or "") == "formatter"]
+    if not formatter_ids:
+        return False
+    return all(by_nid.get(nid) == "complete" for nid in formatter_ids)
+
+
+def _has_incomplete_work(by_nid: dict[str, str]) -> bool:
+    return any(s in ("pending", "running", "failed") for s in by_nid.values())
+
+
+def session_resume_meta(session_id: str) -> dict[str, Any]:
+    """Resume eligibility from graph nodes + persisted node states (no query-id hardcoding)."""
+    store = SessionStore(session_id)
+    if not store.exists():
+        return {
+            "resumable": False,
+            "run_complete": False,
+            "status_counts": {},
+            "running_count": 0,
+            "pending_count": 0,
+            "resume_enabled": False,
+            "resume_action": "none",
+        }
+    try:
+        states = store.load_all_node_states()
+        graph = store.load_graph()
+    except SessionLoadError:
+        return {
+            "resumable": False,
+            "run_complete": False,
+            "status_counts": {},
+            "running_count": 0,
+            "pending_count": 0,
+            "load_error": True,
+            "resume_enabled": False,
+            "resume_action": "none",
+        }
+
+    counts, by_nid = _status_counts_for_graph(graph, states)
+    formatter_complete = _formatter_terminal_complete(graph, by_nid)
+    running_count = counts.get("running", 0)
+    pending_count = counts.get("pending", 0)
+    failed_count = counts.get("failed", 0)
+    graph_nodes = graph.number_of_nodes()
+    has_formatter = any(
+        str(data.get("skill") or "") == "formatter" for _, data in graph.nodes(data=True)
+    )
+
+    # Incomplete nodes in the DAG → continue (SIGKILL mid-wave leaves running→pending on resume).
+    resumable = graph_nodes > 0 and _has_incomplete_work(by_nid) and not formatter_complete
+
+    base = {
+        "resumable": resumable,
+        "run_complete": formatter_complete,
+        "status_counts": counts,
+        "running_count": running_count,
+        "pending_count": pending_count,
+        "failed_count": failed_count,
+        "graph_node_count": graph_nodes,
+        "state_file_count": len(states),
+        "has_formatter": has_formatter,
+        "incomplete_node_count": sum(
+            1 for s in by_nid.values() if s in ("pending", "running", "failed")
+        ),
+    }
+    return {**base, **_resume_ui_fields(base)}
+
+
+def _resume_hint_from_counts(meta: dict[str, Any]) -> str:
+    from_nid = meta.get("resume_from_node_id")
+    if from_nid:
+        n = len(meta.get("resume_reset_node_ids") or [])
+        return f"Continue from {from_nid}" + (f" ({n} node(s) reset)" if n else "")
+    sc = meta.get("status_counts") or {}
+    parts: list[str] = []
+    if sc.get("running"):
+        parts.append(f"{sc['running']} running → stopped on resume")
+    if sc.get("pending"):
+        parts.append(f"{sc['pending']} pending")
+    if sc.get("failed"):
+        parts.append(f"{sc['failed']} failed")
+    if meta.get("run_complete") and meta.get("has_formatter"):
+        parts.append("select formatter node to re-run")
+    return "; ".join(parts) if parts else "Continues from disk (running → pending, then ready nodes)"
+
+
+def _resume_ui_fields(meta: dict[str, Any]) -> dict[str, Any]:
+    """UI fields derived only from node status counts on the graph."""
+    if meta.get("load_error"):
+        return {
+            "resume_action": "none",
+            "resume_label": "Resume session",
+            "resume_enabled": False,
+            "resume_disabled_reason": "Session data could not be loaded.",
+        }
+
+    has_formatter = meta.get("has_formatter")
+    can_continue = meta.get("resumable")
+    can_replay_terminal = meta.get("run_complete") and has_formatter
+    resume_enabled = bool(can_continue or can_replay_terminal)
+
+    if resume_enabled:
+        return {
+            "resume_action": "continue",
+            "resume_label": "Resume",
+            "resume_enabled": True,
+            "resume_disabled_reason": None,
+            "resume_hint": _resume_hint_from_counts(meta),
+        }
+
+    reason = "No incomplete nodes in graph"
+    if meta.get("graph_node_count", 0) == 0:
+        reason = "Graph has no nodes yet"
+    elif meta.get("run_complete"):
+        reason = "All nodes complete (including formatter)"
+    return {
+        "resume_action": "none",
+        "resume_label": "Resume session",
+        "resume_enabled": False,
+        "resume_disabled_reason": reason + " — interrupt a run to persist partial state, then resume",
+    }
+
+
+def prepare_session_for_resume(
+    session_id: str,
+    *,
+    from_node_id: str | None = None,
+) -> dict[str, Any]:
+    """Prepare disk for resume: stop running nodes; optionally rewind from a selected node."""
+    store = SessionStore(session_id)
+    if not store.exists():
+        return session_resume_meta(session_id)
+    if from_node_id:
+        try:
+            reset_ids = store.reset_from_node(from_node_id.strip())
+        except SessionLoadError as e:
+            meta = session_resume_meta(session_id)
+            meta["resume_enabled"] = False
+            meta["resume_disabled_reason"] = str(e)
+            return meta
+        meta = session_resume_meta(session_id)
+        meta["resume_from_node_id"] = from_node_id.strip()
+        meta["resume_reset_node_ids"] = reset_ids
+        ui = _resume_ui_fields(meta)
+        return {**meta, **ui}
+    store.reset_running_to_pending()
+    meta = session_resume_meta(session_id)
+    if meta.get("resumable"):
+        return meta
+    if meta.get("run_complete") and meta.get("has_formatter"):
+        if prepare_formatter_replay(session_id):
+            return session_resume_meta(session_id)
+    return meta
+
+
+def prepare_formatter_replay(session_id: str) -> bool:
+    """Reset formatter node(s) to pending so resume can re-execute the final step."""
+    store = SessionStore(session_id)
+    if not store.exists():
+        return False
+    try:
+        states = store.load_all_node_states()
+        graph = store.load_graph()
+    except SessionLoadError:
+        return False
+    changed = False
+    for nid, data in graph.nodes(data=True):
+        if str(data.get("skill") or "") != "formatter":
+            continue
+        st = states.get(nid)
+        if st is None:
+            st = NodeState(node_id=nid, skill="formatter", metadata=dict(data.get("metadata") or {}))
+            states[nid] = st
+        if st.status == NodeStatus.complete:
+            st.status = NodeStatus.pending
+            st.output = None
+            st.error = None
+            st.elapsed_s = None
+            st.started_at = None
+            st.finished_at = None
+            store.save_node_state(st)
+            changed = True
+    return changed
 
 
 def list_dag_sessions(*, limit: int = 30) -> list[dict[str, Any]]:
@@ -131,12 +398,15 @@ def list_dag_sessions(*, limit: int = 30) -> list[dict[str, Any]]:
             query = qpath.read_text(encoding="utf-8", errors="replace").strip()
             if len(query) > 120:
                 query = query[:117] + "…"
+        sid = path.name
+        resume = session_resume_meta(sid)
         rows.append(
             {
-                "session_id": path.name,
+                "session_id": sid,
                 "modified_utc": datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat(),
                 "query_preview": query,
                 "node_count": _graph_node_count(graph_path),
+                **resume,
             }
         )
     rows.sort(key=lambda r: r["modified_utc"], reverse=True)
@@ -149,7 +419,7 @@ def latest_dag_session_id() -> str | None:
 
 
 def graph_viz_payload(session_id: str) -> dict[str, Any]:
-    """Build vis-network nodes/edges from a persisted session."""
+    """Build Cytoscape-ready nodes/edges from a persisted session."""
     store = SessionStore(session_id)
     if not store.exists():
         raise SessionLoadError(f"No graph for session {session_id}")
@@ -161,6 +431,7 @@ def graph_viz_payload(session_id: str) -> dict[str, Any]:
 
     nodes: list[dict[str, Any]] = []
     edges: list[dict[str, Any]] = []
+    positions = _layered_positions(graph)
 
     for nid, data in graph.nodes(data=True):
         skill = str(data.get("skill") or "?")
@@ -177,11 +448,13 @@ def graph_viz_payload(session_id: str) -> dict[str, Any]:
         node_elapsed = None
         if nid in states and states[nid].elapsed_s is not None:
             node_elapsed = round(float(states[nid].elapsed_s), 2)
+        preview = _result_preview(graph, nid, states)
         nodes.append(
             {
                 "id": nid,
                 "label": f"{skill}\n{label}",
                 "title": title,
+                "result_preview": preview,
                 "elapsed_s": node_elapsed,
                 "color": {
                     "background": _STATUS_COLORS.get(status, "#f4f4f5"),
@@ -195,6 +468,8 @@ def graph_viz_payload(session_id: str) -> dict[str, Any]:
                 "widthConstraint": {"minimum": 110, "maximum": 260},
                 "skill": skill,
                 "status": status,
+                "status_label": status_ui_label(status),
+                "position": positions.get(nid),
             }
         )
 
@@ -213,6 +488,8 @@ def graph_viz_payload(session_id: str) -> dict[str, Any]:
     if store.query_path.is_file():
         query = store.query_path.read_text(encoding="utf-8", errors="replace").strip()
 
+    resume = session_resume_meta(session_id)
+
     return {
         "session_id": session_id,
         "query": query,
@@ -220,9 +497,10 @@ def graph_viz_payload(session_id: str) -> dict[str, Any]:
         "edge_count": len(edges),
         "nodes": nodes,
         "edges": edges,
-        "layout_hint": "hierarchical",
+        "layout_hint": "dagre",
         "memory_hits": _memory_hits_for_ui(store),
         "stats": _session_stats(states),
+        **resume,
     }
 
 

@@ -221,9 +221,30 @@ def validate_assignment_corpus() -> list[str]:
     return errors
 
 
+def expected_flow_for_query(row: dict[str, Any]) -> str:
+    """Human-readable skill chain for UI (inserts auto-spliced critic after distiller)."""
+    explicit = str(row.get("expected_flow") or "").strip()
+    if explicit:
+        return explicit
+    skills = list(row.get("expected_skills") or [])
+    auto = list(row.get("expected_auto") or [])
+    parts: list[str] = []
+    for skill in skills:
+        parts.append(str(skill))
+        if skill == "distiller" and "critic" in auto and "critic" not in parts:
+            parts.append("critic")
+    return " → ".join(parts)
+
+
+def enrich_assignment_query(row: dict[str, Any]) -> dict[str, Any]:
+    out = dict(row)
+    out["expected_flow"] = expected_flow_for_query(row)
+    return out
+
+
 def assignment_payload() -> dict[str, Any]:
     spec = load_assignment_spec()
-    queries = spec.get("queries", [])
+    queries = [enrich_assignment_query(q) for q in spec.get("queries", [])]
     outline = _build_submission_outline(spec)
     groups = [
         {

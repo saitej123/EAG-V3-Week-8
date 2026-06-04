@@ -161,6 +161,76 @@ def test_query_k_resume_from_partial_researcher_layer(tmp_path, monkeypatch):
     complete_researchers = [n for n, s in states.items() if s.skill == "researcher" and s.status == NodeStatus.complete]
     assert len(complete_researchers) == 2
 
+    from cognitive_dag.graph_viz import session_resume_meta
+
+    meta = session_resume_meta(sid)
+    assert meta["resumable"] is True
+    assert meta["resume_action"] == "continue"
+    assert meta["incomplete_node_count"] >= 1
+
+
+def test_session_resume_meta_counts_graph_nodes_without_state_files(tmp_path, monkeypatch):
+    from cognitive_dag import persistence as pers_mod
+    from cognitive_dag.graph_viz import session_resume_meta
+
+    monkeypatch.setattr(pers_mod, "SESSIONS_DIR", tmp_path / "sessions")
+    sid = "dag_partial_graph"
+    store = SessionStore(sid)
+    g = Graph(SkillRegistry())
+    _extend(g, K_PLAN)
+    store.save_graph(g.dg)
+    store.save_node_state(NodeState(node_id="n:1", skill="planner", status=NodeStatus.complete, output="{}"))
+    meta = session_resume_meta(sid)
+    assert meta["graph_node_count"] >= 5
+    assert meta["incomplete_node_count"] >= 4
+    assert meta["resumable"] is True
+
+
+def test_load_session_hydrates_downstream_nodes(tmp_path, monkeypatch):
+    """Coder/formatter on graph without node files stay pending until researchers finish."""
+    from cognitive_dag import persistence as pers_mod
+    from cognitive_dag.flow import Executor
+
+    monkeypatch.setattr(pers_mod, "SESSIONS_DIR", tmp_path / "sessions")
+    sid = "dag_K_hydrate"
+    store = SessionStore(sid)
+    store.save_query("K hydrate test")
+    g = Graph(SkillRegistry())
+    _extend(g, K_PLAN)
+    store.save_graph(g.dg)
+    store.save_node_state(NodeState(node_id="n:1", skill="planner", status=NodeStatus.complete, output="{}"))
+    researchers = sorted(n for n, d in g.dg.nodes(data=True) if d.get("skill") == "researcher")
+    for i, rid in enumerate(researchers):
+        st = NodeStatus.complete if i < 2 else NodeStatus.running
+        store.save_node_state(NodeState(node_id=rid, skill="researcher", status=st, output="x" if st == NodeStatus.complete else None))
+
+    ex = Executor()
+    ex.store = store
+    ex._load_session()
+    coder = next(n for n, d in ex.graph.dg.nodes(data=True) if d.get("skill") == "coder")
+    fmt = next(n for n, d in ex.graph.dg.nodes(data=True) if d.get("skill") == "formatter")
+    assert ex.states[coder].status == NodeStatus.pending
+    assert ex.states[fmt].status == NodeStatus.pending
+    assert ex.states[researchers[2]].status == NodeStatus.pending
+    ready = ex.graph.ready_nodes(ex.states)
+    assert researchers[2] in ready
+    assert coder not in ready
+    assert fmt not in ready
+
+
+def test_query_a_graph_shape_planner_researcher_distiller_critic_formatter():
+    """Query A: planner → researcher → distiller → (auto critic) → formatter (5 nodes)."""
+    g = Graph(SkillRegistry())
+    _extend(g, SHANNON_PLAN)
+    skills = _skills_in_graph(g)
+    assert skills == {"planner", "researcher", "distiller", "critic", "formatter"}
+    assert g.dg.number_of_nodes() == 5
+    distiller = next(n for n, d in g.dg.nodes(data=True) if d.get("skill") == "distiller")
+    formatter = next(n for n, d in g.dg.nodes(data=True) if d.get("skill") == "formatter")
+    critic = next(n for n, d in g.dg.nodes(data=True) if d.get("skill") == "critic")
+    assert g.dg.has_edge(distiller, critic)
+    assert g.dg.has_edge(critic, formatter)
+
 
 def test_query_a_matches_base_query_a_text():
     from cognitive_dag.catalog import load_base_queries

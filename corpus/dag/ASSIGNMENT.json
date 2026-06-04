@@ -87,8 +87,10 @@
       "expected_nodes_min": 4,
       "expected_skills": ["planner", "researcher", "distiller", "formatter"],
       "expected_auto": ["critic"],
-      "ui_hint": "Live fetch of Claude Shannon Wikipedia; distiller + auto critic before formatter.",
-      "notes": "Researcher fetch_url; distiller extracts fields; critic auto-spliced; formatter terminal."
+      "expected_flow": "planner → researcher → distiller → critic → formatter",
+      "ui_hint": "One fetch_url to Wikipedia; distiller extracts birth, death, three contributions; critic pass → formatter.",
+      "verify_hint": "Graph: planner → researcher (1× fetch_url) → distiller → critic (pass) → formatter.",
+      "notes": "Researcher fetch_url once; distiller extracts fields; critic auto-spliced; formatter terminal."
     },
     {
       "id": "I",
@@ -127,8 +129,8 @@
       "expected_skills": ["planner", "researcher", "coder", "formatter", "sandbox_executor"],
       "parallel_researchers": 3,
       "resume_session_example": "dag_K_resumed_v2",
-      "ui_hint": "Three-city parallel run; kill process mid-wave then: scripts/dag/run_query.py --resume <sid>",
-      "verify_hint": "Resumed session reuses query.txt; running nodes reset to pending.",
+      "ui_hint": "Run once, SIGKILL mid parallel researchers, then Resume session in Graph tab (or card button below).",
+      "verify_hint": "Resume: running→pending; pending researcher re-runs tools; coder→formatter finish. state/sessions/<sid>/ is the durable artefact.",
       "notes": "Kill mid parallel-researcher layer; resume resets running→pending."
     },
     {

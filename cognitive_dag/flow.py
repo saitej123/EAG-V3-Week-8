@@ -37,10 +37,42 @@ from .memory import MemoryManager
 from .persistence import SessionLoadError, SessionStore
 from .recovery import handle_critic_verdict, plan_recovery
 from .schemas import MemoryItem
+from .search_providers import extract_http_urls
 from .skills import SkillRegistry, SkillRunContext, format_memory_hits, run_skill
 
 CRITIC_FAIL_CAP = 1
 MAX_NODES = 60
+
+
+def coerce_planner_successors(user_query: str, successors: list[NodeSpec]) -> list[NodeSpec]:
+    """If the user named a URL but the planner only emitted formatter, inject fetch plan."""
+    urls = extract_http_urls(user_query)
+    if not urls:
+        return successors
+    skills = {s.skill for s in successors}
+    if "researcher" in skills or "browser" in skills:
+        return successors
+    if skills != {"formatter"}:
+        return successors
+    logger.warning(
+        "[dag] planner emitted formatter-only for URL query — injecting researcher→distiller→formatter"
+    )
+    return [
+        NodeSpec(
+            skill="researcher",
+            inputs=["USER_QUERY"],
+            metadata={"label": "fetch", "question": f"Fetch and summarize {urls[0]}"},
+        ),
+        NodeSpec(
+            skill="distiller",
+            inputs=["n:fetch"],
+            metadata={
+                "label": "extract",
+                "question": "Extract birth date, death date, and three key contributions",
+            },
+        ),
+        NodeSpec(skill="formatter", inputs=["n:extract"], metadata={"label": "out"}),
+    ]
 
 
 def _log_node(node_id: str, skill: str, msg: str) -> None:
@@ -293,6 +325,7 @@ class Executor:
         self._fatal_error: str | None = None
         self._recovered_branches: dict[str, bool] = {}
         self._critic_fail_cap_hit: list[str] = []
+        self._is_resume = False
 
     async def run(self, user_query: str, session_id: str | None = None) -> str:
         sid = session_id or f"dag-{uuid.uuid4().hex[:8]}"
@@ -314,9 +347,16 @@ class Executor:
             raise SessionLoadError(f"No persisted session at {self.store.root}")
         self.llm = SkillLLMClient(session_id)
         self._run_start = time.monotonic()
-        self._load_session()
-        logger.info(f"[dag] Resumed session {session_id}")
-        return await self._execute_loop()
+        self._is_resume = True
+        try:
+            self._load_session()
+            logger.info(
+                f"[UI_SESSION_JSON] {json.dumps({'session_id': session_id, 'resumed': True}, ensure_ascii=False)}"
+            )
+            logger.info(f"[dag] Resumed session {session_id} (running nodes reset to pending)")
+            return await self._execute_loop()
+        finally:
+            self._is_resume = False
 
     def _bootstrap(self, user_query: str, sid: str) -> None:
         assert self.store is not None
@@ -333,6 +373,7 @@ class Executor:
         self.graph.dg = self.store.load_graph()
         self.store.reset_running_to_pending()
         self.states = self.store.load_all_node_states()
+        self._hydrate_missing_states()
         self.graph.user_query = self.store.load_query()
         self.graph.label_to_node.clear()
         for nid, data in self.graph.dg.nodes(data=True):
@@ -340,23 +381,64 @@ class Executor:
         nums = [int(n.split(":")[1]) for n in self.graph.dg.nodes if str(n).startswith("n:")]
         self.graph._counter = max(nums) if nums else 0
 
+    def _hydrate_missing_states(self) -> None:
+        """SIGKILL mid-wave: graph.json may list coder/formatter before node files exist — keep them pending."""
+        assert self.store is not None
+        for nid, data in self.graph.dg.nodes(data=True):
+            if nid in self.states:
+                continue
+            st = NodeState(
+                node_id=nid,
+                skill=str(data.get("skill") or "?"),
+                inputs=list(data.get("inputs") or []),
+                metadata=dict(data.get("metadata") or {}),
+                status=NodeStatus.pending,
+            )
+            self.states[nid] = st
+            self.store.save_node_state(st)
+            logger.info(f"[dag] Hydrated missing node state {nid} ({st.skill}) as pending")
+
+    def _restore_memory_hits_from_store(self) -> bool:
+        assert self.store is not None
+        rows = self.store.load_memory_hits()
+        if not rows:
+            return False
+        hits: list[MemoryItem] = []
+        for raw in rows:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                hits.append(MemoryItem.model_validate(raw))
+            except Exception:
+                continue
+        if not hits:
+            return False
+        self._memory_hits = hits
+        self._memory_hits_text = format_memory_hits(hits)
+        logger.info(f"[dag] Restored {len(hits)} memory hits from session snapshot (resume)")
+        return True
+
     async def _execute_loop(self) -> str:
         assert self.store is not None
-        await self._prime_memory()
+        try:
+            await self._prime_memory()
 
-        while not self.graph.terminal_complete(self.states):
-            if self._fatal_error:
-                break
-            ready = self.graph.ready_nodes(self.states)
-            if not ready:
-                pending = [n for n, s in self.states.items() if s.status == NodeStatus.pending]
-                if pending and not self._fatal_error:
-                    raise RuntimeError(f"DAG deadlock — pending nodes with no ready predecessors: {pending}")
-                break
+            while not self.graph.terminal_complete(self.states):
+                if self._fatal_error:
+                    break
+                ready = self.graph.ready_nodes(self.states)
+                if not ready:
+                    pending = [n for n, s in self.states.items() if s.status == NodeStatus.pending]
+                    if pending and not self._fatal_error:
+                        raise RuntimeError(f"DAG deadlock — pending nodes with no ready predecessors: {pending}")
+                    break
 
-            _log_node("wave", "executor", f"running {len(ready)} nodes: {ready}")
-            await asyncio.gather(*[self._run_one(nid) for nid in ready])
-            self._persist()
+                _log_node("wave", "executor", f"running {len(ready)} nodes: {ready}")
+                await self._run_wave(ready)
+                self._persist()
+        except asyncio.CancelledError:
+            self._revert_running_to_pending()
+            raise
 
         if self._fatal_error:
             raise RuntimeError(self._fatal_error)
@@ -376,6 +458,8 @@ class Executor:
 
     async def _prime_memory(self) -> None:
         """Single memory.read at session start — same hits threaded to every skill."""
+        if self._is_resume and self._restore_memory_hits_from_store():
+            return
         self._memory_hits = await asyncio.to_thread(
             self.memory.read,
             self.graph.user_query,
@@ -383,14 +467,40 @@ class Executor:
             top_k=12,
         )
         self._memory_hits_text = format_memory_hits(self._memory_hits)
-        await asyncio.to_thread(
-            self.memory.remember,
-            f"DAG run: {self.graph.user_query[:500]}",
-            source="dag_session",
-            run_id=self.store.session_id if self.store else "",
-        )
-        if self.store:
+        if not self._is_resume:
+            await asyncio.to_thread(
+                self.memory.remember,
+                f"DAG run: {self.graph.user_query[:500]}",
+                source="dag_session",
+                run_id=self.store.session_id if self.store else "",
+            )
+        if self.store and not self._is_resume:
             await asyncio.to_thread(self.store.save_memory_hits, self._memory_hits)
+        elif self.store and self._is_resume and self._memory_hits:
+            await asyncio.to_thread(self.store.save_memory_hits, self._memory_hits)
+
+    async def _run_wave(self, ready: list[str]) -> None:
+        """Run a parallel wave; on cancel, revert in-flight nodes to pending (resume-safe)."""
+        tasks = [asyncio.create_task(self._run_one(nid)) for nid in ready]
+        try:
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            self._revert_running_to_pending()
+            raise
+
+    def _revert_running_to_pending(self) -> None:
+        """After wave cancel / resume — never leave nodes stuck as running on disk."""
+        for st in self.states.values():
+            if st.status != NodeStatus.running:
+                continue
+            st.status = NodeStatus.pending
+            st.started_at = None
+            st.finished_at = None
+            self._flush_node_state(st)
 
     async def _run_one(self, node_id: str) -> None:
         """Dispatch one node — identical path for Planner, Researcher, Coder, Formatter."""
@@ -464,6 +574,7 @@ class Executor:
         state.status = NodeStatus.running
         state.started_at = time.monotonic()
         t0 = state.started_at
+        self._flush_node_state(state)
         _log_node(node_id, skill_name, "start")
 
         graph_nodes = self._graph_nodes_view()
@@ -481,6 +592,7 @@ class Executor:
             )
             self.graph.dg.nodes[node_id]["result"] = result
             state.output = _state_output_from_result(result)
+            state.artifact_id = result.artifact_id
             state.elapsed_s = result.elapsed_s
 
             if not result.success:
@@ -503,6 +615,10 @@ class Executor:
                     return
 
             if result.successors and skill.extends_graph:
+                successors = list(result.successors)
+                if skill_name == "planner":
+                    successors = coerce_planner_successors(self.graph.user_query, successors)
+                result.successors = successors
                 created = self.graph.extend_from(node_id, result)
                 for nid in created:
                     nd = self.graph.dg.nodes[nid]
@@ -513,6 +629,12 @@ class Executor:
                         metadata=dict(nd.get("metadata") or {}),
                     )
                 _log_node(node_id, skill_name, f"extended graph with {len(created)} nodes")
+        except asyncio.CancelledError:
+            if state.status == NodeStatus.running:
+                state.status = NodeStatus.pending
+                state.started_at = None
+            self._flush_node_state(state)
+            raise
         except Exception as e:
             await self._handle_node_failure(node_id, skill_name, str(e), state)
             return
@@ -520,6 +642,7 @@ class Executor:
             state.finished_at = time.monotonic()
             if state.elapsed_s is None:
                 state.elapsed_s = state.finished_at - (t0 or state.finished_at)
+            self._flush_node_state(state)
             _log_node(node_id, skill_name, f"done in {state.elapsed_s:.2f}s")
 
     async def _handle_critic(self, critic_id: str, raw_output: str) -> None:
@@ -543,6 +666,7 @@ class Executor:
     ) -> None:
         state.status = NodeStatus.failed
         state.error = error
+        self._flush_node_state(state)
         decision = plan_recovery(
             failed_skill=skill_name,
             error_text=error,
@@ -596,6 +720,19 @@ class Executor:
         for st in self.states.values():
             self.store.save_node_state(st)
 
+    def _flush_node_state(self, state: NodeState) -> None:
+        """Write one node to disk immediately so /api/dag/graph shows run/wait colors during a wave."""
+        assert self.store is not None
+        if state.node_id in self.graph.dg:
+            self.graph.dg.nodes[state.node_id]["result"] = AgentResult(
+                status=state.status.value,
+                output=state.output,
+                artifact_id=state.artifact_id,
+                error=state.error,
+                elapsed_s=state.elapsed_s,
+            )
+        self.store.save_node_state(state)
+
     async def aclose(self) -> None:
         await self.action.aclose()
 
@@ -613,19 +750,31 @@ def log_final_answer(answer: str) -> None:
 class DagAgent:
     """Web UI entry when AGENT_MODE=dag (default)."""
 
-    def __init__(self) -> None:
-        self._executor = Executor()
-
     async def run(self, user_query: str, session_id: str | None = None) -> None:
+        """One fresh Executor (and MCP session) per UI run — avoids stale connections after aclose."""
+        executor = Executor()
         try:
-            answer = await self._executor.run(user_query, session_id=session_id)
+            answer = await executor.run(user_query, session_id=session_id)
             log_final_answer(answer)
             logger.info("[agent] RUN_COMPLETE reason=dag_done")
         finally:
             try:
-                await self._executor.aclose()
+                await executor.aclose()
+            except Exception as e:
+                logger.warning(f"[dag] cleanup failed: {e}")
+
+    async def resume(self, session_id: str) -> None:
+        """Continue a persisted session (SIGKILL-safe): running → pending, then execute."""
+        executor = Executor()
+        try:
+            answer = await executor.resume(session_id.strip())
+            log_final_answer(answer)
+            logger.info("[agent] RUN_COMPLETE reason=dag_resumed")
+        finally:
+            try:
+                await executor.aclose()
             except Exception as e:
                 logger.warning(f"[dag] cleanup failed: {e}")
 
     async def aclose(self) -> None:
-        await self._executor.aclose()
+        return

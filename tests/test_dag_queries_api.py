@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from cognitive_dag.catalog import (
     assignment_payload,
+    expected_flow_for_query,
     get_dag_query,
     load_assignment_queries,
     validate_assignment_corpus,
@@ -88,6 +89,19 @@ def test_api_dag_queries_success():
     for q in body["queries"]:
         assert q["query"].strip()
         assert "wall_clock_sec" in q
+        if q.get("expected_skills"):
+            assert q.get("expected_flow")
+
+
+def test_query_a_expected_flow_and_wikipedia_url():
+    row = get_dag_query("A")
+    assert row is not None
+    assert "wikipedia.org/wiki/Claude_Shannon" in row["query"]
+    assert expected_flow_for_query(row) == "planner → researcher → distiller → critic → formatter"
+    payload = assignment_payload()
+    api_a = next(q for q in payload["queries"] if q["id"] == "A")
+    assert api_a["expected_flow"] == expected_flow_for_query(row)
+    assert "fetch_url" in api_a.get("verify_hint", "").lower() or "fetch" in api_a.get("ui_hint", "").lower()
 
 
 def test_api_dag_queries_render_fields_for_ui():
@@ -114,3 +128,8 @@ def test_api_dag_queries_html_page_includes_loader():
     assert "loadDagQueries" in html
     assert "dagQueriesScroll" in html
     assert "/api/queries/dag" in html
+    assert "cytoscape" in html
+    assert "dagGraphDownloadBtn" in html
+    assert "dagGraphResumeBtn" in html
+    assert "/run-agent/resume" in html
+    assert "dagGraphResumeWrap" in html

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 import asyncio
 import os
 import threading
+import uuid
 from loguru import logger
 import sys
 from dotenv import load_dotenv
@@ -139,6 +140,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Cognitive DAG Agent", lifespan=lifespan)
 app.mount("/Images", StaticFiles(directory=str(BASE_DIR / "Images")), name="images")
+_static_dir = BASE_DIR / "static"
+if _static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 # Console: ANSI colors when tty. SSE/UI sink: plain text (no markup) for reliable browser rendering.
 _LOG_FORMAT = (
@@ -170,6 +174,13 @@ if not _templates_dir.is_dir():
 
 class QueryRequest(BaseModel):
     query: str
+    query_id: str | None = None
+
+
+class ResumeRequest(BaseModel):
+    session_id: str
+    from_node_id: str | None = None
+    replay_formatter: bool = False
 
 
 class DocumentPathRequest(BaseModel):
@@ -181,6 +192,7 @@ class DocumentPathRequest(BaseModel):
 _ops_lock = threading.Lock()
 _run_busy = False
 _index_busy = False
+_run_task: asyncio.Task | None = None
 
 
 def _is_run_busy() -> bool:
@@ -193,7 +205,49 @@ def _is_index_busy() -> bool:
         return _index_busy
 
 
+def _clear_stale_run_busy() -> None:
+    """After SIGKILL the worker restarts; if the task finished but the flag stuck, clear it."""
+    with _ops_lock:
+        global _run_busy, _run_task
+        if _run_busy and _run_task is not None and _run_task.done():
+            logger.warning("[agent] Clearing stale run_busy (background task already finished)")
+            _run_busy = False
+            _run_task = None
+
+
+def _force_end_run() -> None:
+    with _ops_lock:
+        global _run_busy, _run_task
+        _run_busy = False
+        _run_task = None
+
+
+async def _stop_active_run() -> bool:
+    """Cancel the in-flight agent task and clear run_busy (required before resume)."""
+    global _run_task
+    with _ops_lock:
+        task = _run_task
+        _run_busy = False
+        _run_task = None
+    if task is None or task.done():
+        return False
+    task.cancel()
+    try:
+        _done, pending = await asyncio.wait([task], timeout=10.0)
+        for p in pending:
+            p.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        pass
+    await asyncio.sleep(0.2)
+    return True
+
+
 def _try_begin_run() -> JSONResponse | None:
+    _clear_stale_run_busy()
     with _ops_lock:
         global _run_busy
         if _run_busy:
@@ -215,8 +269,16 @@ def _try_begin_run() -> JSONResponse | None:
 
 def _end_run() -> None:
     with _ops_lock:
-        global _run_busy
+        global _run_busy, _run_task
         _run_busy = False
+        _run_task = None
+
+
+def _start_run_task(coro) -> asyncio.Task:
+    global _run_task
+    task = asyncio.create_task(coro)
+    _run_task = task
+    return task
 
 
 def _try_begin_index() -> JSONResponse | None:
@@ -274,14 +336,28 @@ async def run_agent(request: QueryRequest):
     blocked = _try_begin_run()
     if blocked:
         return blocked
-    logger.info(f"[UI] Starting agent with query: {request.query}")
+    qid = (request.query_id or "").strip() or None
+    session_id = f"dag_{qid}_{uuid.uuid4().hex[:8]}" if qid else None
+    logger.info(
+        f"[UI] Starting agent"
+        + (f" query_id={qid}" if qid else "")
+        + f" session={session_id or '(auto)'}"
+        + f" text={request.query[:120]!r}"
+    )
 
     async def _job():
         try:
-            await asyncio.wait_for(
-                _get_cognitive_agent().run(request.query),
-                timeout=agent_run_max_seconds(),
-            )
+            agent = _get_cognitive_agent()
+            if _agent_mode() == "dag":
+                await asyncio.wait_for(
+                    agent.run(request.query, session_id=session_id),
+                    timeout=agent_run_max_seconds(),
+                )
+            else:
+                await asyncio.wait_for(
+                    agent.run(request.query),
+                    timeout=agent_run_max_seconds(),
+                )
         except asyncio.TimeoutError:
             logger.error(
                 f"[agent] Global time budget exceeded ({agent_run_max_seconds()}s) — run stopped"
@@ -315,11 +391,113 @@ async def run_agent(request: QueryRequest):
             _end_run()
 
     try:
-        asyncio.create_task(_job())
+        _start_run_task(_job())
     except Exception:
         _end_run()
         raise
     return {"status": "Agent started"}
+
+
+@app.post("/api/dag/unlock")
+async def api_dag_unlock():
+    """Stop in-flight agent (if any) and clear agent_busy — use before resume after SIGKILL."""
+    cancelled = await _stop_active_run()
+    if not cancelled:
+        _force_end_run()
+    return {
+        "status": "success",
+        "agent_busy": _is_run_busy(),
+        "index_busy": _is_index_busy(),
+        "cancelled": cancelled,
+    }
+
+
+@app.post("/run-agent/resume")
+async def resume_agent(request: ResumeRequest):
+    """Resume a persisted DAG session from state/sessions/<id>/ (running → pending)."""
+    sid = (request.session_id or "").strip()
+    from_node_id = (request.from_node_id or "").strip() or None
+    if not sid:
+        return JSONResponse({"status": "error", "detail": "session_id is required"}, status_code=400)
+    if _agent_mode() != "dag":
+        return JSONResponse(
+            {"status": "error", "detail": "Resume is only supported when AGENT_MODE=dag"},
+            status_code=400,
+        )
+
+    from cognitive_dag.graph_viz import graph_viz_payload, prepare_session_for_resume
+
+    await _stop_active_run()
+    meta = prepare_session_for_resume(sid, from_node_id=from_node_id)
+    if not meta.get("resume_enabled"):
+        detail = meta.get("resume_disabled_reason") or (
+            "Session cannot be resumed from current node states on disk."
+        )
+        return JSONResponse({"status": "error", "detail": detail}, status_code=400)
+
+    try:
+        graph_body = await asyncio.to_thread(graph_viz_payload, sid)
+    except Exception as e:
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=404)
+
+    blocked = _try_begin_run()
+    if blocked:
+        return blocked
+
+    if from_node_id:
+        logger.info(f"[UI] Resuming DAG session {sid!r} (rewind from {from_node_id!r})")
+    else:
+        logger.info(f"[UI] Resuming DAG session {sid!r} (checkpoint: running → pending)")
+
+    async def _job():
+        try:
+            await asyncio.wait_for(
+                _get_cognitive_agent().resume(sid),
+                timeout=agent_run_max_seconds(),
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                f"[agent] Global time budget exceeded on resume ({agent_run_max_seconds()}s)"
+            )
+            try:
+                from cognitive_dag.flow import log_final_answer
+
+                log_final_answer(
+                    "## Run stopped (time budget)\n\n"
+                    "Resume exceeded the configured wall-clock limit (`AGENT_RUN_MAX_SECONDS`). "
+                    "See **Live console** for partial progress."
+                )
+            except Exception:
+                pass
+            logger.info("[agent] RUN_COMPLETE reason=resume_timeout")
+        except asyncio.CancelledError:
+            raise
+        except BaseException as e:
+            logger.opt(exception=e).error("[agent] Resume failed")
+            try:
+                from cognitive_dag.flow import log_final_answer
+
+                log_final_answer(
+                    "## Resume failed\n\n"
+                    "Could not continue the session. See **Live console** for details."
+                )
+            except Exception:
+                pass
+            logger.info("[agent] RUN_COMPLETE reason=resume_failed")
+        finally:
+            _end_run()
+
+    try:
+        _start_run_task(_job())
+    except Exception:
+        _end_run()
+        raise
+    return {
+        "status": "Agent resumed",
+        "session_id": sid,
+        "resume_meta": meta,
+        "graph": {"status": "success", **graph_body},
+    }
 
 
 @app.get("/stream-logs")
@@ -566,7 +744,7 @@ async def api_dag_sessions():
 
 @app.get("/api/dag/graph")
 async def api_dag_graph(session_id: str | None = None):
-    """vis-network payload for a persisted session (defaults to latest)."""
+    """Cytoscape/dagre graph payload for a persisted session (defaults to latest)."""
     try:
         from cognitive_dag.graph_viz import graph_viz_payload, latest_dag_session_id
         from cognitive_dag.persistence import SessionLoadError
@@ -578,7 +756,12 @@ async def api_dag_graph(session_id: str | None = None):
                 status_code=404,
             )
         payload = await asyncio.to_thread(graph_viz_payload, sid)
-        return {"status": "success", **payload}
+        return {
+            "status": "success",
+            **payload,
+            "agent_busy": _is_run_busy(),
+            "index_busy": _is_index_busy(),
+        }
     except SessionLoadError as e:
         return JSONResponse({"status": "error", "detail": str(e)}, status_code=404)
     except Exception as e:
