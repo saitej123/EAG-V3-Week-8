@@ -60,7 +60,7 @@ Pins: [`agent_routing.yaml`](agent_routing.yaml). Without it, `SkillLLMClient` c
 | Area | What it does |
 |------|----------------|
 | **Chat** | Run any query; streams `[dag]` trace and final answer |
-| **DAG Queries** | Ten built-in demo queries (five capability groups). **Design blocks** at the top explain parallel fan-out (**P**) and critic pass/fail (**C_pass** / **C_fail**); cards load verbatim text and run |
+| **DAG Queries** | Submission order parts **1–5**: base (`hello`–`K`) → parallel (`P`) → critic (`C_pass`/`C_fail`) → coder (`M`) → calculator (`CALC`). Design requirements inline before parts 2–3; cards load verbatim text and run |
 | **Graph** | Full-width **vis-network** view: canvas + sidebar (session stats, node detail on click, FAISS memory hits at run start). Session picker, Refresh, Fit, optional auto-refresh during a live run |
 | **Documents** | Upload / bulk-index `research_papers/` or `papers/` (RAG corpus for retriever) |
 | **RAG** | Custom recall queries (iteration-loop corpus; optional) |
@@ -81,13 +81,13 @@ Live runs emit `[UI_SESSION_JSON] {"session_id": "..."}` so the graph tab can fo
 Full verification commands: **[docs/ASSIGNMENT.md](docs/ASSIGNMENT.md)**  
 Corpus (verbatim queries + bounds): [`corpus/dag/ASSIGNMENT.json`](corpus/dag/ASSIGNMENT.json)
 
-| Group | Query ids | What it proves |
-|-------|-----------|----------------|
-| **Base** | `hello`, `A`, `I`, `J`, `K` | Minimum DAG, Shannon fetch, parallel populations, graceful fail, resume |
-| **Parallel** | `P` | ≥3 concurrent researchers; wall-clock ≈ max branch, not sum |
-| **Critic** | `C_pass`, `C_fail` | `validate_json_keys` pass; fail → recovery planner |
-| **Coder** | `M` | `prompts/coder.md` → SandboxExecutor; answer **150769** |
-| **Calculator** | `CALC` | **calculator** + `safe_calculate` (yaml + prompt only) |
+| Part | Query ids | What it proves |
+|------|-----------|----------------|
+| **1 · Base** | `hello`, `A`, `I`, `J`, `K` (in that order) | Session base queries verbatim within bounds |
+| **2 · Parallel** | `P` | ≥3 concurrent researchers; wall-clock ≈ max branch, not sum |
+| **3 · Critic** | `C_pass`, `C_fail` | `validate_json_keys` pass; fail → recovery planner |
+| **4 · Coder** | `M` | `prompts/coder.md` → SandboxExecutor; answer **150769** |
+| **5 · Calculator** | `CALC` | **calculator** + `safe_calculate` (yaml + prompt only) |
 
 **Parallel fan-out (design query P):** Planner must emit ≥3 independent researcher nodes in one wave. After the run:
 

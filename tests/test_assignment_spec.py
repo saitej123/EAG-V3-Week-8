@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from cognitive_dag.catalog import assignment_payload, load_assignment_queries
+from cognitive_dag.catalog import (
+    assignment_payload,
+    load_assignment_queries,
+    validate_assignment_corpus,
+)
 from cognitive_dag.dag_schemas import NodeSpec, PlannerOutput
 from cognitive_dag.flow import Graph
 from cognitive_dag.skills import SkillRegistry
@@ -54,3 +58,8 @@ def test_assignment_payload():
     assert len(design) >= 2
     kinds = {d["kind"] for d in design}
     assert "parallel" in kinds and "critic" in kinds
+    assert len(payload.get("groups") or []) == 5
+
+
+def test_assignment_corpus_validates():
+    assert validate_assignment_corpus() == []

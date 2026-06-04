@@ -590,8 +590,14 @@ async def api_dag_graph(session_id: str | None = None):
 async def api_dag_queries():
     """Built-in DAG demo queries (hello–K + parallel, critic, coder, calculator)."""
     try:
-        from cognitive_dag.catalog import assignment_payload
+        from cognitive_dag.catalog import assignment_payload, validate_assignment_corpus
 
+        issues = validate_assignment_corpus()
+        if issues:
+            return JSONResponse(
+                {"status": "error", "detail": "; ".join(issues)},
+                status_code=500,
+            )
         return {"status": "success", **assignment_payload()}
     except Exception as e:
         logger.error(f"[UI] DAG queries failed: {e}")

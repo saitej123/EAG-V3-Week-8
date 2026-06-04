@@ -126,15 +126,122 @@ def load_assignment_queries() -> list[dict[str, Any]]:
     return list(load_assignment_spec().get("queries", []))
 
 
+_REQUIRED_QUERY_FIELDS = ("id", "part", "title", "query", "wall_clock_sec")
+_EXPECTED_QUERY_IDS = frozenset(
+    {"hello", "A", "I", "J", "K", "P", "C_pass", "C_fail", "M", "CALC"}
+)
+
+
+def _build_submission_outline(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    """Ordered parts 1–5 for UI (matches submission checklist)."""
+    outline = spec.get("submission_outline")
+    if isinstance(outline, list) and outline:
+        return [
+            {
+                "part": int(row.get("part") or 0),
+                "title": str(row.get("title") or ""),
+                "summary": str(row.get("summary") or ""),
+                "query_ids": [str(x) for x in row.get("query_ids") or []],
+                "design_id": row.get("design_id"),
+            }
+            for row in outline
+        ]
+
+    part_labels = {1: "Base", 2: "Parallel", 3: "Critic", 4: "Coder", 5: "Calculator"}
+    by_part: dict[int, list[str]] = {}
+    for row in spec.get("queries") or []:
+        part = int(row.get("part") or 0)
+        by_part.setdefault(part, []).append(str(row["id"]))
+    return [
+        {
+            "part": part,
+            "title": part_labels.get(part, f"Group {part}"),
+            "summary": "",
+            "query_ids": by_part[part],
+            "design_id": None,
+        }
+        for part in sorted(by_part)
+    ]
+
+
+def validate_assignment_corpus() -> list[str]:
+    """Return human-readable errors; empty list means corpus is UI/API-ready."""
+    errors: list[str] = []
+    spec = load_assignment_spec()
+    rows = spec.get("queries") or []
+    ids = {str(r.get("id", "")) for r in rows}
+    if ids != _EXPECTED_QUERY_IDS:
+        missing = sorted(_EXPECTED_QUERY_IDS - ids)
+        extra = sorted(ids - _EXPECTED_QUERY_IDS - {""})
+        if missing:
+            errors.append(f"Missing query ids: {', '.join(missing)}")
+        if extra:
+            errors.append(f"Unexpected query ids: {', '.join(extra)}")
+
+    for row in rows:
+        qid = str(row.get("id", ""))
+        for field in _REQUIRED_QUERY_FIELDS:
+            if row.get(field) in (None, ""):
+                errors.append(f"{qid}: missing required field {field}")
+        qtext = str(row.get("query") or "").strip()
+        if not qtext:
+            errors.append(f"{qid}: empty query text")
+        try:
+            if float(row.get("wall_clock_sec") or 0) <= 0:
+                errors.append(f"{qid}: wall_clock_sec must be positive")
+        except (TypeError, ValueError):
+            errors.append(f"{qid}: invalid wall_clock_sec")
+
+    by_id = {str(r["id"]): r for r in rows if r.get("id")}
+    for dq in spec.get("design_queries") or []:
+        kind = str(dq.get("kind") or "")
+        if kind == "parallel":
+            ref = str(dq.get("query_id") or "")
+            if ref not in by_id:
+                errors.append(f"design_queries {dq.get('id')}: unknown query_id {ref}")
+        elif kind == "critic":
+            for ref in dq.get("query_ids") or []:
+                if str(ref) not in by_id:
+                    errors.append(f"design_queries {dq.get('id')}: unknown query_id {ref}")
+        else:
+            errors.append(f"design_queries {dq.get('id')}: unknown kind {kind}")
+
+    outline = _build_submission_outline(spec)
+    outlined_ids: list[str] = []
+    for section in outline:
+        outlined_ids.extend(section["query_ids"])
+    if sorted(outlined_ids) != sorted(_EXPECTED_QUERY_IDS):
+        errors.append("submission_outline must list every query id exactly once")
+    design_by_id = {str(d["id"]): d for d in spec.get("design_queries") or [] if d.get("id")}
+    for section in outline:
+        did = section.get("design_id")
+        if did and str(did) not in design_by_id:
+            errors.append(f"outline part {section['part']}: unknown design_id {did}")
+
+    return errors
+
+
 def assignment_payload() -> dict[str, Any]:
     spec = load_assignment_spec()
+    queries = spec.get("queries", [])
+    outline = _build_submission_outline(spec)
+    groups = [
+        {
+            "part": row["part"],
+            "label": row["title"],
+            "query_ids": row["query_ids"],
+        }
+        for row in outline
+    ]
     return {
         "description": spec.get("description", ""),
         "session_root": spec.get("session_root", "state/sessions"),
         "log_dir": spec.get("log_dir", "logs/dag"),
-        "query_count": len(spec.get("queries", [])),
-        "queries": spec.get("queries", []),
+        "query_count": len(queries),
+        "queries": queries,
         "design_queries": spec.get("design_queries", []),
+        "groups": groups,
+        "outline": outline,
     }
 
 

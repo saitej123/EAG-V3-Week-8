@@ -115,6 +115,25 @@
         .sidebar-shell {
             border: 1px solid var(--border);
             background: var(--background);
+            display: flex;
+            flex-direction: column;
+            max-height: min(calc(100dvh - 5rem), 920px);
+        }
+        @media (min-width: 1024px) {
+            #sidebarAside .sidebar-shell {
+                max-height: calc(100vh - 5rem);
+                position: sticky;
+                top: 2rem;
+                align-self: flex-start;
+            }
+        }
+        #panelTestCases:not(.hidden),
+        #panelRag:not(.hidden) {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: hidden;
         }
         .pipeline-strip {
             display: grid;
@@ -252,7 +271,24 @@
             border: 1px solid #e4e4e7;
             background: linear-gradient(180deg, #fafafa 0%, #fff 100%);
             padding: 0.65rem 0.75rem;
-            margin-bottom: 0.5rem;
+        }
+        .dag-design-block details {
+            cursor: pointer;
+        }
+        .dag-design-block details summary {
+            list-style: none;
+            cursor: pointer;
+        }
+        .dag-design-block details summary::-webkit-details-marker {
+            display: none;
+        }
+        .dag-design-block details summary::after {
+            content: ' ▾';
+            font-size: 0.625rem;
+            color: #a1a1aa;
+        }
+        .dag-design-block details[open] summary::after {
+            content: ' ▴';
         }
         .dag-design-block h4 {
             font-size: 0.6875rem;
@@ -311,6 +347,24 @@
             border-color: #fcd34d;
             color: #b45309;
             background: #fffbeb;
+        }
+        .dag-outline-summary {
+            font-size: 0.625rem;
+            line-height: 1.45;
+            color: #71717a;
+            margin: 0.15rem 0 0.5rem;
+            padding: 0 0.125rem;
+        }
+        .dag-outline-header {
+            font-size: 0.6875rem;
+            font-weight: 700;
+            color: #18181b;
+            margin-top: 0.65rem;
+            margin-bottom: 0.15rem;
+            padding: 0 0.125rem;
+        }
+        .dag-outline-header:first-child {
+            margin-top: 0;
         }
         .case-header {
             display: flex;
@@ -435,24 +489,39 @@
         .sidebar-examples-scroll {
             max-height: min(52vh, 440px);
         }
-        #testCaseList.sidebar-examples-scroll {
+        #dagQueriesScroll {
             flex: 1 1 auto;
-            min-height: 14rem;
-            max-height: min(62vh, 600px);
+            min-height: 10rem;
+            overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            padding-right: 0.2rem;
+        }
+        #testCaseList {
+            display: flex;
+            flex-direction: column;
             gap: 0.875rem;
             padding-bottom: 0.375rem;
         }
-        #panelTestCases {
+        #panelTestCases.hidden {
+            display: none !important;
+        }
+        #panelRag:not(.hidden) {
             display: flex;
             flex-direction: column;
             min-height: 0;
-            max-height: min(72vh, 680px);
+            overflow: hidden;
         }
-        #panelTestCases.hidden {
-            display: none;
+        #panelRag .rag-panel-scroll {
+            flex: 1 1 auto;
+            min-height: 8rem;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
         }
         @media (min-width: 1024px) {
-            .sidebar-examples-scroll {
+            .sidebar-examples-scroll:not(#testCaseList) {
                 max-height: min(60vh, 520px);
             }
         }
@@ -1383,11 +1452,12 @@
                 <p id="dagGraphSidebarMeta" class="text-[10px] text-zinc-400">No session loaded</p>
             </div>
 
-            <div id="panelTestCases" role="tabpanel" aria-labelledby="tabTestCasesBtn" class="hidden p-4 flex flex-col gap-3 min-h-0">
-                <p class="text-xs leading-snug text-slate-500 shrink-0">Ten built-in DAG demo queries across five capability groups. Design blocks cover parallel fan-out and critic recovery. Logs: <code class="text-[10px]">logs/dag/</code></p>
-                <div id="dagDesignQueries" class="shrink-0 flex flex-col gap-2" aria-label="DAG design scenarios"></div>
-                <div id="testCaseList" class="sidebar-examples-scroll flex flex-col overflow-y-auto pb-1 scrollbar-thin pr-0.5 min-h-0">
-                    <p class="text-xs text-slate-400 py-4 text-center">Loading DAG queries…</p>
+            <div id="panelTestCases" role="tabpanel" aria-labelledby="tabTestCasesBtn" class="hidden p-4 flex flex-col gap-2 min-h-0">
+                <p class="text-xs leading-snug text-slate-500 shrink-0">Submission order: parts 1–5 (base → parallel → critic → coder → new skill). Scroll for all queries · logs in <code class="text-[10px]">logs/dag/</code></p>
+                <div id="dagQueriesScroll" class="dag-queries-scroll scrollbar-thin flex flex-col gap-1 min-h-0" tabindex="0" aria-label="DAG query list">
+                    <div id="testCaseList" class="flex flex-col shrink-0">
+                        <p class="text-xs text-slate-400 py-4 text-center">Loading DAG queries…</p>
+                    </div>
                 </div>
 
                 <button type="button" id="resetStateBtn" class="shrink-0 w-full text-center border border-red-200 hover:bg-red-50 text-red-700 bg-white hover:border-red-300 rounded-xl py-2.5 text-xs font-bold transition outline-none">
@@ -1395,12 +1465,12 @@
                 </button>
             </div>
 
-            <div id="panelRag" role="tabpanel" aria-labelledby="tabRagBtn" class="hidden p-4 space-y-3">
-                <div class="rounded-lg border border-violet-200/80 bg-violet-50/60 p-3">
+            <div id="panelRag" role="tabpanel" aria-labelledby="tabRagBtn" class="hidden p-4 flex flex-col gap-2 min-h-0">
+                <div class="rounded-lg border border-violet-200/80 bg-violet-50/60 p-3 shrink-0">
                     <p class="text-[11px] font-semibold text-violet-900">Custom corpus eval</p>
                     <p id="ragRequirementsText" class="mt-1 text-[10px] leading-snug text-violet-900/75">Five queries against <code class="text-[9px]">research_papers/</code>. Each must pass with the index and fail on empty memory. At least two use semantic recall.</p>
                 </div>
-                <div id="ragQueryList" class="sidebar-examples-scroll flex flex-col gap-2.5 overflow-y-auto pb-1 scrollbar-thin pr-0.5 min-h-[8rem]">
+                <div id="ragQueryList" class="rag-panel-scroll sidebar-examples-scroll scrollbar-thin flex flex-col gap-2.5 pb-1 pr-0.5 min-h-0">
                     <p class="text-xs text-slate-400 py-4 text-center">Loading queries…</p>
                 </div>
             </div>
@@ -2904,6 +2974,15 @@
         if (name === 'graph') {
             void loadGraphView(activeDagSessionId || undefined);
         }
+        if (name === 'testcases') {
+            const list = document.getElementById('testCaseList');
+            const stale =
+                list &&
+                (!list.querySelector('.test-case-btn') ||
+                    list.querySelector('.text-red-600') ||
+                    /Loading DAG queries/.test(list.textContent || ''));
+            if (stale) void loadDagQueries();
+        }
         if (pendingResultMarkdown) {
             paintResultPanel(pendingResultMarkdown);
             pendingResultMarkdown = null;
@@ -3611,6 +3690,20 @@
         return labels[part] || 'Group ' + part;
     }
 
+    function dagQueryHint(q) {
+        return String((q && (q.ui_hint || q.notes)) || '').trim();
+    }
+
+    function dagSkillsTag(q) {
+        const skills = q && q.expected_skills;
+        if (!skills || !skills.length) return '';
+        return (
+            '<span class="case-tool-hint">' +
+            escapeHtml(skills.join(' → ')) +
+            '</span>'
+        );
+    }
+
     function loadDagQueryIntoComposer(query, autoRun) {
         if (!query) return;
         activateTab('overview');
@@ -3621,76 +3714,128 @@
         if (autoRun) startAgentRun();
     }
 
-    function renderDagDesignQueries(designRows, queriesById) {
-        const host = document.getElementById('dagDesignQueries');
-        if (!host) return;
-        host.innerHTML = '';
-        if (!designRows || !designRows.length) return;
-
-        designRows.forEach(function (dq) {
-            const block = document.createElement('div');
-            block.className = 'dag-design-block';
-            const reqs = (dq.requirements || [])
-                .map(function (r) {
-                    return '<li>' + escapeHtml(r) + '</li>';
-                })
-                .join('');
-            const tools =
-                dq.tools && dq.tools.length
-                    ? '<span class="case-tool-hint">Tools: ' +
-                      escapeHtml(dq.tools.join(', ')) +
-                      '</span>'
-                    : '';
-            const verify = dq.verify
-                ? '<p class="dag-design-verify"><strong>Verify:</strong> ' +
-                  escapeHtml(dq.verify) +
-                  '</p>'
+    function renderDagDesignBlock(dq, queriesById) {
+        const block = document.createElement('div');
+        block.className = 'dag-design-block';
+        if (!dq) return block;
+        const reqs = (dq.requirements || [])
+            .map(function (r) {
+                return '<li>' + escapeHtml(r) + '</li>';
+            })
+            .join('');
+        const tools =
+            dq.tools && dq.tools.length
+                ? '<span class="case-tool-hint">Tools: ' +
+                  escapeHtml(dq.tools.join(', ')) +
+                  '</span>'
                 : '';
-            const also =
-                dq.also_see
-                    ? '<p class="dag-design-verify">' + escapeHtml(dq.also_see) + '</p>'
-                    : '';
-            block.innerHTML =
-                '<h4>' +
-                escapeHtml(dq.title || dq.id || '') +
-                '</h4>' +
-                (reqs ? '<ul>' + reqs + '</ul>' : '') +
-                tools +
-                verify +
-                also +
-                '<div class="dag-design-actions"></div>';
-            const actions = block.querySelector('.dag-design-actions');
+        const verify = dq.verify
+            ? '<p class="dag-design-verify"><strong>Verify:</strong> ' +
+              escapeHtml(dq.verify) +
+              '</p>'
+            : '';
+        const also = dq.also_see
+            ? '<p class="dag-design-verify">' + escapeHtml(dq.also_see) + '</p>'
+            : '';
+        block.innerHTML =
+            '<details open>' +
+            '<summary><h4 class="inline text-[0.6875rem] font-bold text-zinc-900">' +
+            escapeHtml(dq.title || dq.id || '') +
+            '</h4></summary>' +
+            '<div class="dag-design-body mt-1">' +
+            (reqs ? '<ul>' + reqs + '</ul>' : '') +
+            tools +
+            verify +
+            also +
+            '<div class="dag-design-actions"></div>' +
+            '</div></details>';
+        const actions = block.querySelector('.dag-design-actions');
 
-            if (dq.kind === 'parallel' && dq.query_id) {
-                const qrow = queriesById[dq.query_id];
-                if (qrow && actions) {
-                    const run = document.createElement('button');
-                    run.type = 'button';
-                    run.className = 'dag-design-run primary';
-                    run.textContent = 'Run ' + dq.query_id;
-                    run.addEventListener('click', function () {
-                        loadDagQueryIntoComposer(qrow.query, true);
-                    });
-                    actions.appendChild(run);
-                }
+        if (dq.kind === 'parallel' && dq.query_id) {
+            const qrow = queriesById[dq.query_id];
+            if (!qrow && actions) {
+                actions.innerHTML =
+                    '<span class="text-[10px] text-red-600">Missing query ' +
+                    escapeHtml(dq.query_id) +
+                    ' in catalog</span>';
             }
-            if (dq.kind === 'critic' && dq.query_ids) {
-                dq.query_ids.forEach(function (qid, idx) {
-                    const qrow = queriesById[qid];
-                    if (!qrow || !actions) return;
-                    const run = document.createElement('button');
-                    run.type = 'button';
-                    run.className =
-                        'dag-design-run ' + (idx === 0 ? 'critic-pass' : 'critic-fail');
-                    run.textContent =
-                        idx === 0 ? 'Run ' + qid + ' (pass)' : 'Run ' + qid + ' (fail → recovery)';
-                    run.addEventListener('click', function () {
-                        loadDagQueryIntoComposer(qrow.query, true);
-                    });
-                    actions.appendChild(run);
+            if (qrow && actions) {
+                const run = document.createElement('button');
+                run.type = 'button';
+                run.className = 'dag-design-run primary';
+                run.textContent = 'Run ' + dq.query_id;
+                run.addEventListener('click', function () {
+                    loadDagQueryIntoComposer(qrow.query, true);
                 });
+                actions.appendChild(run);
             }
-            host.appendChild(block);
+        }
+        if (dq.kind === 'critic' && dq.query_ids) {
+            dq.query_ids.forEach(function (qid, idx) {
+                const qrow = queriesById[qid];
+                if (!qrow) {
+                    if (actions) {
+                        const miss = document.createElement('span');
+                        miss.className = 'text-[10px] text-red-600 block';
+                        miss.textContent = 'Missing query ' + qid;
+                        actions.appendChild(miss);
+                    }
+                    return;
+                }
+                if (!actions) return;
+                const run = document.createElement('button');
+                run.type = 'button';
+                run.className =
+                    'dag-design-run ' + (idx === 0 ? 'critic-pass' : 'critic-fail');
+                run.textContent =
+                    idx === 0 ? 'Run ' + qid + ' (pass)' : 'Run ' + qid + ' (fail → recovery)';
+                run.addEventListener('click', function () {
+                    loadDagQueryIntoComposer(qrow.query, true);
+                });
+                actions.appendChild(run);
+            });
+        }
+        return block;
+    }
+
+    function renderDagSubmissionSections(list, body, queriesById) {
+        const designById = {};
+        (body.design_queries || []).forEach(function (dq) {
+            designById[dq.id] = dq;
+        });
+        const sections =
+            body.outline && body.outline.length
+                ? body.outline
+                : (body.groups || []).map(function (g) {
+                      return {
+                          part: g.part,
+                          title: g.label,
+                          summary: '',
+                          query_ids: g.query_ids || [],
+                          design_id: null,
+                      };
+                  });
+        sections.forEach(function (section) {
+            const header = document.createElement('p');
+            header.className = 'dag-outline-header';
+            header.textContent =
+                section.part + ' · ' + (section.title || dagPartLabel(section.part));
+            list.appendChild(header);
+            if (section.summary) {
+                const sum = document.createElement('p');
+                sum.className = 'dag-outline-summary';
+                sum.textContent = section.summary;
+                list.appendChild(sum);
+            }
+            if (section.design_id && designById[section.design_id]) {
+                list.appendChild(
+                    renderDagDesignBlock(designById[section.design_id], queriesById)
+                );
+            }
+            (section.query_ids || []).forEach(function (qid) {
+                const q = queriesById[qid];
+                if (q) list.appendChild(renderDagQueryButton(q));
+            });
         });
     }
 
@@ -3707,8 +3852,9 @@
         } else if (q.featured === 'critic_design' || q.critic_expect) {
             badgeClass += ' critic';
         }
-        const uiHint = q.ui_hint
-            ? '<span class="case-run-hint">' + escapeHtml(q.ui_hint) + '</span>'
+        const hintText = dagQueryHint(q);
+        const uiHint = hintText
+            ? '<span class="case-run-hint">' + escapeHtml(hintText) + '</span>'
             : '';
         const verifyHint = q.verify_hint
             ? '<span class="case-run-hint text-emerald-800/90">' +
@@ -3724,10 +3870,11 @@
               ) +
               '</span>'
             : '';
+        const parallelN = Number(q.parallel_researchers) || 0;
         const parallelTag =
-            q.parallel_researchers >= 3
+            parallelN >= 3
                 ? '<span class="case-tool-hint">≥' +
-                  q.parallel_researchers +
+                  parallelN +
                   ' parallel researchers</span>'
                 : '';
         btn.innerHTML =
@@ -3741,14 +3888,17 @@
             escapeHtml(q.title || q.id || '') +
             '</span>' +
             '<span class="case-subtitle">' +
-            escapeHtml(dagPartLabel(q.part)) +
+            'Part ' +
+            escapeHtml(String(q.part || '')) +
             (bound ? ' · ' + escapeHtml(bound) : '') +
             '</span>' +
             uiHint +
             verifyHint +
             criticTag +
             parallelTag +
+            dagSkillsTag(q) +
             '</div></div>';
+        btn.title = String(q.query || '').slice(0, 240);
         return btn;
     }
 
@@ -3757,8 +3907,15 @@
         const tabBadge = document.querySelector('#tabTestCasesBtn .tabular-nums');
         try {
             const res = await fetch('/api/queries/dag');
-            const body = await res.json();
-            if (!res.ok || !body.queries) throw new Error('load failed');
+            const body = await res.json().catch(function () {
+                return {};
+            });
+            if (!res.ok || body.status === 'error') {
+                throw new Error((body && body.detail) || 'HTTP ' + res.status);
+            }
+            if (!body.queries || !body.queries.length) {
+                throw new Error('No queries in catalog');
+            }
             if (tabBadge && body.query_count) {
                 tabBadge.textContent = String(body.query_count);
             }
@@ -3766,33 +3923,19 @@
             body.queries.forEach(function (q) {
                 queriesById[q.id] = q;
             });
-            renderDagDesignQueries(body.design_queries || [], queriesById);
-            const byPart = {};
-            body.queries.forEach(function (q) {
-                const p = q.part || 0;
-                if (!byPart[p]) byPart[p] = [];
-                byPart[p].push(q);
-            });
             if (list) {
                 list.innerHTML = '';
-                Object.keys(byPart)
-                    .sort(function (a, b) { return Number(a) - Number(b); })
-                    .forEach(function (part) {
-                        const header = document.createElement('p');
-                        header.className = 'text-[10px] font-bold uppercase tracking-wide text-zinc-400 mt-2 mb-1 px-0.5';
-                        header.textContent = dagPartLabel(Number(part));
-                        list.appendChild(header);
-                        byPart[part].forEach(function (q) {
-                            list.appendChild(renderDagQueryButton(q));
-                        });
-                    });
+                renderDagSubmissionSections(list, body, queriesById);
+                if (!list.querySelector('.test-case-btn')) {
+                    throw new Error('No query cards rendered');
+                }
             }
         } catch (err) {
-            const designHost = document.getElementById('dagDesignQueries');
-            if (designHost) designHost.innerHTML = '';
             if (list) {
                 list.innerHTML =
-                    '<p class="text-xs text-red-600 py-4 text-center">Failed to load DAG queries.</p>';
+                    '<p class="text-xs text-red-600 py-4 text-center">Failed to load DAG queries' +
+                    (err && err.message ? ': ' + escapeHtml(err.message) : '.') +
+                    '</p>';
             }
         }
     }

@@ -1,8 +1,42 @@
 {
-  "description": "Built-in DAG demo queries — base (hello,A,I,J,K) plus parallel, critic, coder, calculator.",
+  "description": "DAG submission outline — parts 1–5 in demo order (base, parallel, critic, coder, new skill).",
   "session_root": "state/sessions",
   "log_dir": "logs/dag",
   "worked_query_ids": ["hello", "A", "I", "J", "K"],
+  "submission_outline": [
+    {
+      "part": 1,
+      "title": "Base queries (session)",
+      "summary": "Pass hello, A, I, J, K verbatim within the wall-clock bound on each card.",
+      "query_ids": ["hello", "A", "I", "J", "K"]
+    },
+    {
+      "part": 2,
+      "title": "Parallel fan-out",
+      "summary": "Custom query with ≥3 independent sub-tasks as concurrent planner nodes; verify wall-clock ≈ max(branch), not sum.",
+      "design_id": "parallel_design",
+      "query_ids": ["P"]
+    },
+    {
+      "part": 3,
+      "title": "Critic verdict",
+      "summary": "Tool-grounded pass and fail (validate_json_keys); fail must splice recovery planner with corrected answer.",
+      "design_id": "critic_design",
+      "query_ids": ["C_pass", "C_fail"]
+    },
+    {
+      "part": 4,
+      "title": "Coder + SandboxExecutor",
+      "summary": "Coder prompt emits Python for SandboxExecutor; computation the formatter cannot do from text alone.",
+      "query_ids": ["M"]
+    },
+    {
+      "part": 5,
+      "title": "New skill (calculator)",
+      "summary": "Skill in agent_config.yaml + prompts/calculator.md; orchestrator unchanged.",
+      "query_ids": ["CALC"]
+    }
+  ],
   "design_queries": [
     {
       "id": "parallel_design",
@@ -34,12 +68,13 @@
     {
       "id": "hello",
       "part": 1,
-      "label": "Hello",
+      "label": "hello",
       "title": "Minimum DAG",
       "query": "Say hello.",
       "wall_clock_sec": 15,
       "expected_nodes_min": 2,
       "expected_skills": ["planner", "formatter"],
+      "ui_hint": "Smallest graph: planner → formatter only.",
       "notes": "Planner emits Formatter as sole successor; wall-clock under 3s."
     },
     {
@@ -52,6 +87,7 @@
       "expected_nodes_min": 4,
       "expected_skills": ["planner", "researcher", "distiller", "formatter"],
       "expected_auto": ["critic"],
+      "ui_hint": "Live fetch of Claude Shannon Wikipedia; distiller + auto critic before formatter.",
       "notes": "Researcher fetch_url; distiller extracts fields; critic auto-spliced; formatter terminal."
     },
     {
@@ -64,6 +100,8 @@
       "expected_nodes_min": 7,
       "expected_skills": ["planner", "researcher", "coder", "formatter", "sandbox_executor"],
       "parallel_researchers": 3,
+      "ui_hint": "Canonical parallel shape: 3 researchers in one wave, then coder and formatter.",
+      "verify_hint": "Same timing check as query P — analyze_session_timing.py on session id.",
       "notes": "Three parallel researchers; coder; formatter diamond with auto sandbox_executor."
     },
     {
@@ -75,6 +113,7 @@
       "wall_clock_sec": 30,
       "expected_nodes_min": 2,
       "expected_skills": ["planner", "formatter"],
+      "ui_hint": "Missing file path — planner should route to formatter with a failure note (no hung tools).",
       "notes": "Planner emits formatter directly with failure note; no tool dispatch."
     },
     {
@@ -88,6 +127,8 @@
       "expected_skills": ["planner", "researcher", "coder", "formatter", "sandbox_executor"],
       "parallel_researchers": 3,
       "resume_session_example": "dag_K_resumed_v2",
+      "ui_hint": "Three-city parallel run; kill process mid-wave then: scripts/dag/run_query.py --resume <sid>",
+      "verify_hint": "Resumed session reuses query.txt; running nodes reset to pending.",
       "notes": "Kill mid parallel-researcher layer; resume resets running→pending."
     },
     {
@@ -133,18 +174,26 @@
     {
       "id": "M",
       "part": 4,
+      "label": "M",
       "title": "Coder + SandboxExecutor computation",
       "query": "What is the exact integer value of (17 * 23 - 4) ** 2 + 1000? Use coder to compute; sandbox must verify.",
       "wall_clock_sec": 60,
-      "expected_skills": ["planner", "coder", "formatter", "sandbox_executor"]
+      "expected_nodes_min": 4,
+      "expected_skills": ["planner", "coder", "formatter", "sandbox_executor"],
+      "ui_hint": "Coder emits Python; sandbox_executor verifies stdout. Expected answer: 150769.",
+      "verify_hint": "Graph: planner → coder → sandbox_executor → formatter."
     },
     {
       "id": "CALC",
       "part": 5,
-      "title": "Calculator skill (new)",
+      "label": "CALC",
+      "title": "Calculator skill",
       "query": "What is the exact numeric value of (987654321 ** 0) + ((17 * 23 + 41) / 7)? Use the calculator skill.",
       "wall_clock_sec": 45,
-      "expected_skills": ["planner", "calculator", "formatter"]
+      "expected_nodes_min": 3,
+      "expected_skills": ["planner", "calculator", "formatter"],
+      "ui_hint": "Uses calculator skill + safe_calculate tool (yaml + prompt only, no Executor change).",
+      "verify_hint": "Expected numeric result ≈ 62.714 (1 + (432/7))."
     }
   ]
 }
