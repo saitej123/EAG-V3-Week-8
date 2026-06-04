@@ -1,0 +1,3834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cognitive · DAG Agent</title>
+    <link rel="icon" href="/Images/app-icon.svg" type="image/svg+xml">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ansi_up@5.2.1/ansi_up.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #09090b;
+            --muted: #f4f4f5;
+            --muted-foreground: #71717a;
+            --border: #e4e4e7;
+            --input: #e4e4e7;
+            --ring: #18181b;
+            --primary: #18181b;
+            --primary-foreground: #fafafa;
+            --radius: 0.5rem;
+            --surface: #fafafa;
+            --log-bg: #0c1222;
+            --log-border: rgba(148, 163, 184, 0.18);
+        }
+        body {
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+            background: var(--background);
+            color: var(--foreground);
+            min-height: 100vh;
+        }
+        /* shadcn-style brand lockup */
+        .brand-lockup {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            min-width: 0;
+        }
+        .brand-logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: calc(var(--radius) + 2px);
+            background: linear-gradient(145deg, #27272a 0%, #18181b 100%);
+            border: 1px solid #27272a;
+            color: #fafafa;
+            box-shadow:
+                0 1px 2px rgb(0 0 0 / 0.14),
+                inset 0 1px 0 rgb(255 255 255 / 0.08);
+            flex-shrink: 0;
+        }
+        .brand-logo svg { display: block; }
+        .brand-logo-lg {
+            width: 3.25rem;
+            height: 3.25rem;
+            border-radius: 0.75rem;
+        }
+        .brand-logo-sm {
+            width: 2rem;
+            height: 2rem;
+            border-radius: calc(var(--radius) + 1px);
+        }
+        .brand-meta { min-width: 0; }
+        .brand-title-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        .brand-wordmark {
+            font-size: 0.9375rem;
+            font-weight: 600;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            color: var(--foreground);
+        }
+        .brand-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.125rem 0.4375rem;
+            border-radius: 999px;
+            font-size: 0.625rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #52525b;
+            background: #f4f4f5;
+            border: 1px solid #e4e4e7;
+            line-height: 1.2;
+        }
+        .brand-subtitle {
+            margin-top: 0.125rem;
+            font-size: 0.6875rem;
+            font-weight: 500;
+            letter-spacing: -0.01em;
+            line-height: 1.35;
+            color: var(--muted-foreground);
+        }
+        .brand-tag {
+            font-size: 0.6875rem;
+            font-weight: 500;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--muted-foreground);
+        }
+        .sidebar-shell {
+            border: 1px solid var(--border);
+            background: var(--background);
+        }
+        .pipeline-strip {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.35rem;
+        }
+        .pipeline-step {
+            text-align: center;
+            padding: 0.45rem 0.25rem;
+            border-radius: 10px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            font-size: 0.625rem;
+            font-weight: 600;
+            color: var(--muted-foreground);
+            transition: border-color 0.2s, background 0.2s, color 0.2s;
+        }
+        .pipeline-step span {
+            display: block;
+            font-size: 0.6875rem;
+            font-weight: 700;
+            color: var(--foreground);
+            margin-bottom: 0.1rem;
+        }
+        .pipeline-step.active {
+            border-color: #a1a1aa;
+            background: var(--muted);
+            color: var(--foreground);
+        }
+        .test-case-btn {
+            position: relative;
+            flex-shrink: 0;
+            transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+        }
+        .test-case-btn:hover {
+            box-shadow: 0 4px 12px rgba(15, 23, 23, 0.06);
+        }
+        .sidebar-examples-scroll .test-case-btn:hover {
+            transform: none;
+        }
+        .test-case-card,
+        .test-case-group {
+            flex-shrink: 0;
+            width: 100%;
+        }
+        .test-case-group {
+            isolation: isolate;
+        }
+        .case-header > div:last-child {
+            flex: 1;
+            min-width: 0;
+        }
+        .case-subtitle {
+            display: block;
+            margin-top: 0.25rem;
+            font-size: 0.625rem;
+            line-height: 1.5;
+            color: #64748b;
+            word-break: normal;
+            overflow-wrap: anywhere;
+        }
+        .case-tool-hint {
+            display: inline-block;
+            margin-top: 0.35rem;
+            padding: 0.1rem 0.4rem;
+            border-radius: 0.25rem;
+            font-size: 0.5625rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            color: #166534;
+            background: #ecfdf5;
+            border: 1px solid #bbf7d0;
+        }
+        .case-run-hint {
+            display: block;
+            margin-top: 0.15rem;
+            font-size: 0.625rem;
+            line-height: 1.45;
+            color: #94a3b8;
+        }
+        .bulk-index-grid {
+            display: grid;
+            gap: 0.75rem;
+        }
+        @media (min-width: 640px) {
+            .bulk-index-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        .bulk-index-card {
+            border-radius: 0.75rem;
+            border: 1px solid var(--border);
+            background: linear-gradient(180deg, rgba(250, 250, 250, 0.95), #fff);
+            padding: 1rem;
+        }
+        .log-line.log-local {
+            color: #86efac;
+        }
+        .log-line.log-heuristic {
+            color: #fbbf24;
+        }
+        .case-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 1.35rem;
+            height: 1.35rem;
+            padding: 0 0.35rem;
+            border-radius: calc(var(--radius) - 2px);
+            font-size: 0.625rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            background: var(--muted);
+            color: var(--foreground);
+            border: 1px solid var(--border);
+        }
+        .case-badge.rag {
+            background: var(--muted);
+            color: var(--foreground);
+            border-color: var(--border);
+        }
+        .case-badge.parallel {
+            background: #dbeafe;
+            color: #1d4ed8;
+            border-color: #93c5fd;
+        }
+        .case-badge.critic {
+            background: #fef3c7;
+            color: #b45309;
+            border-color: #fcd34d;
+        }
+        .dag-design-block {
+            flex-shrink: 0;
+            border-radius: 0.75rem;
+            border: 1px solid #e4e4e7;
+            background: linear-gradient(180deg, #fafafa 0%, #fff 100%);
+            padding: 0.65rem 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+        .dag-design-block h4 {
+            font-size: 0.6875rem;
+            font-weight: 700;
+            color: #18181b;
+            line-height: 1.35;
+        }
+        .dag-design-block ul {
+            margin: 0.35rem 0 0;
+            padding-left: 1rem;
+            font-size: 0.625rem;
+            line-height: 1.45;
+            color: #52525b;
+        }
+        .dag-design-block .dag-design-verify {
+            margin-top: 0.4rem;
+            font-size: 0.5625rem;
+            line-height: 1.4;
+            color: #71717a;
+        }
+        .dag-design-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-top: 0.5rem;
+        }
+        .dag-design-run {
+            font-size: 0.625rem;
+            font-weight: 600;
+            padding: 0.25rem 0.55rem;
+            border-radius: 0.375rem;
+            border: 1px solid #d4d4d8;
+            background: #fff;
+            color: #18181b;
+            cursor: pointer;
+            transition: background 0.12s, border-color 0.12s;
+        }
+        .dag-design-run:hover {
+            background: #f4f4f5;
+            border-color: #a1a1aa;
+        }
+        .dag-design-run.primary {
+            background: #18181b;
+            color: #fff;
+            border-color: #18181b;
+        }
+        .dag-design-run.primary:hover {
+            background: #27272a;
+        }
+        .dag-design-run.critic-pass {
+            border-color: #86efac;
+            color: #166534;
+            background: #ecfdf5;
+        }
+        .dag-design-run.critic-fail {
+            border-color: #fcd34d;
+            color: #b45309;
+            background: #fffbeb;
+        }
+        .case-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+        .card-elevated {
+            border: 1px solid rgba(15, 23, 42, 0.06);
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 40px rgba(15, 23, 42, 0.06);
+        }
+        .terminal-wrap {
+            border-radius: 14px;
+            border: 1px solid var(--log-border);
+            background: linear-gradient(180deg, #111827 0%, var(--log-bg) 48%);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 24px 48px rgba(2, 6, 23, 0.35);
+            overflow: hidden;
+        }
+        .terminal-chrome {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+            background: linear-gradient(180deg, rgba(255,255,255,0.05), transparent);
+        }
+        .dot { width: 10px; height: 10px; border-radius: 999px; }
+        .dot-r { background: #fb7185; box-shadow: 0 0 0 1px rgba(0,0,0,0.2) inset; }
+        .dot-y { background: #fbbf24; box-shadow: 0 0 0 1px rgba(0,0,0,0.2) inset; }
+        .dot-g { background: #34d399; box-shadow: 0 0 0 1px rgba(0,0,0,0.2) inset; }
+        .terminal-title {
+            font-size: 11px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: rgba(226, 232, 240, 0.65);
+            font-weight: 600;
+        }
+        .log-scroll {
+            font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 12.5px;
+            line-height: 1.55;
+            color: #e2e8f0;
+            background: var(--log-bg);
+            padding: 14px 16px 18px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+            flex: 1 1 auto;
+            min-height: 13rem;
+            max-height: min(44vh, 420px);
+            -webkit-overflow-scrolling: touch;
+        }
+        .log-placeholder {
+            color: rgba(226, 232, 240, 0.55);
+        }
+        @media (min-width: 1024px) {
+            .log-scroll {
+                min-height: 13rem;
+                max-height: min(44vh, 420px);
+            }
+        }
+        .log-line {
+            margin: 0 0 0.4rem 0;
+            word-break: break-word;
+            white-space: pre-wrap;
+            color: #e2e8f0;
+        }
+        .log-line.log-iter {
+            color: #a5b4fc;
+            font-weight: 600;
+            margin-top: 0.65rem;
+        }
+        .log-line.log-role {
+            color: #f1f5f9;
+        }
+        .log-line[data-level="success"] { color: #86efac; }
+        .log-line[data-level="warning"] { color: #fbbf24; }
+        .log-line[data-level="error"] { color: #fb7185; }
+        .log-line[data-level="debug"] { color: #94a3b8; }
+        /* Loguru/ANSI blue is illegible on the dark console — force readable slate/cyan */
+        .log-scroll .log-line span[style*="color:blue"],
+        .log-scroll .log-line span[style*="color: blue"],
+        .log-scroll .log-line span[style*="rgb(0, 0, 255)"],
+        .log-scroll .log-line span[style*="rgb(0,0,255)"] {
+            color: #cbd5e1 !important;
+        }
+        .log-line .ansi-bright-white { color: #f8fafc !important; }
+        .log-line .ansi-bright-blue,
+        .log-line .ansi-blue { color: #cbd5e1 !important; }
+        .scrollbar-thin::-webkit-scrollbar { width: 9px; height: 9px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.35);
+            border-radius: 999px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+        }
+        .role-list li {
+            display: flex;
+            gap: 0.5rem;
+            align-items: flex-start;
+        }
+        .role-list .role-name {
+            flex-shrink: 0;
+            font-weight: 650;
+            color: #334155;
+        }
+        .sidebar-tab-btn {
+            border-left-width: 3px;
+            border-left-style: solid;
+            text-align: left;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .sidebar-tab-btn .tab-icon {
+            flex-shrink: 0;
+            width: 1.125rem;
+            height: 1.125rem;
+            opacity: 0.55;
+        }
+        .sidebar-tab-btn.border-l-zinc-900 .tab-icon { opacity: 1; }
+        .sidebar-examples-scroll {
+            max-height: min(52vh, 440px);
+        }
+        #testCaseList.sidebar-examples-scroll {
+            flex: 1 1 auto;
+            min-height: 14rem;
+            max-height: min(62vh, 600px);
+            gap: 0.875rem;
+            padding-bottom: 0.375rem;
+        }
+        #panelTestCases {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            max-height: min(72vh, 680px);
+        }
+        #panelTestCases.hidden {
+            display: none;
+        }
+        @media (min-width: 1024px) {
+            .sidebar-examples-scroll {
+                max-height: min(60vh, 520px);
+            }
+        }
+        .layout-main {
+            display: flex;
+            flex-direction: column;
+            gap: 0.875rem;
+            min-height: 0;
+            flex: 1 1 auto;
+        }
+        @media (min-width: 1024px) {
+            .layout-main {
+                min-height: calc(100vh - 7rem);
+            }
+            .layout-main.trace-hidden {
+                max-height: calc(100vh - 7rem);
+                overflow: hidden;
+            }
+            .layout-main:not(.trace-hidden) {
+                max-height: none;
+                overflow: visible;
+            }
+            .layout-main:not(.trace-hidden) .chat-card {
+                flex: 1 1 auto;
+                min-height: 0;
+                max-height: min(52vh, 560px);
+            }
+            .layout-main:not(.trace-hidden) .console-card {
+                flex: 0 0 auto;
+            }
+            .layout-main:not(.trace-hidden) .log-scroll {
+                min-height: 14rem;
+                max-height: min(38vh, 440px);
+            }
+        }
+        .console-card.console-collapsed .terminal-wrap {
+            display: none;
+        }
+        .console-card.console-collapsed {
+            padding-bottom: 1rem;
+        }
+        .console-card.console-expanded:not(.console-collapsed) .log-scroll {
+            min-height: min(42vh, 520px);
+            max-height: min(62vh, 720px);
+        }
+        /* Rendered agent answer (markdown → HTML) */
+        .result-rich {
+            font-size: 0.9375rem;
+            line-height: 1.65;
+            color: #0f172a;
+        }
+        .result-rich h1 { font-size: 1.35rem; font-weight: 700; margin: 1rem 0 0.5rem; letter-spacing: -0.02em; }
+        .result-rich h2 { font-size: 1.15rem; font-weight: 650; margin: 1rem 0 0.45rem; color: #0f172a; }
+        .result-rich h3 { font-size: 1.05rem; font-weight: 600; margin: 0.85rem 0 0.35rem; }
+        .result-rich p { margin: 0.5rem 0; }
+        .result-rich ul { list-style-type: disc !important; margin: 0.45rem 0 0.55rem 1.35rem; }
+        .result-rich ol { list-style-type: decimal !important; margin: 0.45rem 0 0.55rem 1.35rem; }
+        .result-rich li { margin: 0.2rem 0; }
+        .result-rich table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.85rem 0;
+            font-size: 0.875rem;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+        }
+        .result-rich th, .result-rich td {
+            border-bottom: 1px solid #e2e8f0;
+            padding: 0.55rem 0.65rem;
+            text-align: left;
+            vertical-align: top;
+        }
+        .result-rich thead th {
+            background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+            font-weight: 600;
+            color: #334155;
+        }
+        .result-rich tbody tr:nth-child(even) { background: rgba(248, 250, 252, 0.65); }
+        .result-rich hr { margin: 1rem 0; border: 0; border-top: 1px solid #e2e8f0; }
+        .result-rich code {
+            font-family: ui-monospace, "JetBrains Mono", monospace;
+            font-size: 0.84em;
+            background: #f1f5f9;
+            padding: 0.12em 0.38em;
+            border-radius: 5px;
+            color: #0f172a;
+        }
+        .result-rich pre {
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 1rem 1.1rem;
+            border-radius: 10px;
+            overflow-x: auto;
+            font-size: 0.82rem;
+            margin: 0.65rem 0;
+        }
+        .result-rich pre code { background: transparent; padding: 0; color: inherit; font-size: inherit; }
+        .result-rich blockquote {
+            border-left: 4px solid #94a3b8;
+            margin: 0.6rem 0;
+            padding: 0.35rem 0 0.35rem 1rem;
+            color: #475569;
+            background: rgba(248, 250, 252, 0.9);
+            border-radius: 0 8px 8px 0;
+        }
+        .result-rich strong { font-weight: 650; color: #020617; }
+        .result-rich a { color: #1d4ed8; text-decoration: underline; text-underline-offset: 2px; }
+        .result-rich .katex-display {
+            margin: 0.75rem 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 0.15rem 0;
+        }
+        .result-rich .katex { font-size: 1.02em; }
+        .result-rich li > .katex-display { margin: 0.35rem 0; }
+
+        /* ── shadcn-style chat ── */
+        .chat-card {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
+            min-height: min(76vh, 780px);
+            max-height: min(86vh, 920px);
+            overflow: hidden;
+            background: var(--background);
+        }
+        @media (min-width: 1024px) {
+            .chat-card {
+                min-height: 0;
+                max-height: none;
+            }
+            .layout-main.trace-hidden .chat-card {
+                flex: 1 1 auto;
+                min-height: 0;
+                max-height: none;
+            }
+        }
+        .chat-header {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--background);
+        }
+        .chat-messages {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            min-height: 0;
+            padding: 1rem 1.125rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.875rem;
+            background: linear-gradient(180deg, #fafafa 0%, #ffffff 12%);
+        }
+        .chat-welcome {
+            margin: auto;
+            max-width: 28rem;
+            text-align: center;
+            padding: 2rem 1rem;
+        }
+        .chat-welcome-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 3.25rem;
+            height: 3.25rem;
+            border-radius: 0.75rem;
+            background: linear-gradient(145deg, #27272a 0%, #18181b 100%);
+            border: 1px solid #27272a;
+            color: #fafafa;
+            box-shadow:
+                0 4px 14px rgb(0 0 0 / 0.12),
+                inset 0 1px 0 rgb(255 255 255 / 0.08);
+            margin-bottom: 1rem;
+        }
+        .chat-row {
+            display: flex;
+            gap: 0.625rem;
+            max-width: 96%;
+            animation: chat-in 0.22s ease-out;
+        }
+        @keyframes chat-in {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .chat-row-user {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+            max-width: 88%;
+        }
+        .chat-row-assistant {
+            align-self: flex-start;
+        }
+        .chat-row-system {
+            align-self: center;
+            max-width: 100%;
+        }
+        .chat-avatar {
+            flex-shrink: 0;
+            width: 1.75rem;
+            height: 1.75rem;
+            border-radius: calc(var(--radius) + 1px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.5625rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            border: 1px solid var(--border);
+        }
+        .chat-row-user .chat-avatar {
+            background: var(--primary);
+            color: var(--primary-foreground);
+            border-color: var(--primary);
+            font-size: 0.5625rem;
+        }
+        .chat-row-assistant .chat-avatar {
+            background: linear-gradient(145deg, #27272a 0%, #18181b 100%);
+            color: #fafafa;
+            border: 1px solid #27272a;
+            border-radius: calc(var(--radius) + 2px);
+            box-shadow:
+                0 1px 2px rgb(0 0 0 / 0.12),
+                inset 0 1px 0 rgb(255 255 255 / 0.08);
+        }
+        .chat-row-assistant .chat-avatar svg {
+            display: block;
+        }
+        .chat-bubble {
+            border-radius: calc(var(--radius) + 2px);
+            padding: 0.5625rem 0.8125rem;
+            font-size: 0.8125rem;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+        .chat-bubble.result-rich {
+            font-size: 0.8125rem;
+            line-height: 1.55;
+            color: #27272a;
+        }
+        .chat-bubble.result-rich h1 {
+            font-size: 0.9375rem;
+            font-weight: 650;
+            margin: 0.65rem 0 0.3rem;
+            letter-spacing: -0.02em;
+        }
+        .chat-bubble.result-rich h2 {
+            font-size: 0.875rem;
+            font-weight: 650;
+            margin: 0.55rem 0 0.25rem;
+            color: #18181b;
+        }
+        .chat-bubble.result-rich h3 {
+            font-size: 0.8125rem;
+            font-weight: 600;
+            margin: 0.45rem 0 0.2rem;
+        }
+        .chat-bubble.result-rich p { margin: 0.35rem 0; }
+        .chat-bubble.result-rich ul {
+            list-style-type: disc !important;
+            margin: 0.3rem 0 0.4rem 1.1rem;
+        }
+        .chat-bubble.result-rich ol {
+            list-style-type: decimal !important;
+            margin: 0.3rem 0 0.4rem 1.1rem;
+        }
+        .chat-bubble.result-rich li { margin: 0.12rem 0; }
+        .chat-bubble.result-rich strong { font-weight: 600; color: #18181b; }
+        .chat-bubble.result-rich code {
+            font-size: 0.78em;
+            padding: 0.1em 0.32em;
+        }
+        .chat-bubble.result-rich pre {
+            font-size: 0.75rem;
+            padding: 0.65rem 0.75rem;
+            margin: 0.45rem 0;
+        }
+        .chat-bubble.result-rich blockquote {
+            margin: 0.4rem 0;
+            padding: 0.25rem 0 0.25rem 0.75rem;
+            font-size: 0.8125rem;
+        }
+        .chat-bubble.result-rich .katex { font-size: 0.95em; }
+        .chat-row-user .chat-bubble {
+            background: var(--primary);
+            color: var(--primary-foreground);
+            border-bottom-right-radius: 0.25rem;
+            box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+        }
+        .chat-row-assistant .chat-bubble {
+            background: var(--background);
+            color: var(--foreground);
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 0.25rem;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        }
+        .chat-row-system .chat-bubble {
+            background: var(--muted);
+            color: var(--muted-foreground);
+            border: 1px dashed var(--border);
+            font-size: 0.75rem;
+            padding: 0.4rem 0.75rem;
+            border-radius: 999px;
+        }
+        .chat-typing .chat-bubble {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.65rem 1rem;
+            min-width: 4.5rem;
+        }
+        .chat-typing-dot {
+            width: 0.4rem;
+            height: 0.4rem;
+            border-radius: 999px;
+            background: var(--muted-foreground);
+            animation: typing-bounce 1.2s infinite ease-in-out;
+        }
+        .chat-typing-dot:nth-child(2) { animation-delay: 0.15s; }
+        .chat-typing-dot:nth-child(3) { animation-delay: 0.3s; }
+        @keyframes typing-bounce {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+            30% { transform: translateY(-4px); opacity: 1; }
+        }
+        /* Inline streaming log panel (chat) — collapses when the answer arrives */
+        .chat-stream-bubble {
+            padding: 0;
+            overflow: hidden;
+            min-width: min(100%, 28rem);
+            max-width: 100%;
+        }
+        .chat-stream-head {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.55rem 0.85rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.6875rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            color: var(--muted-foreground);
+            background: var(--muted);
+        }
+        .chat-stream-pulse {
+            width: 0.4rem;
+            height: 0.4rem;
+            border-radius: 999px;
+            background: #22c55e;
+            flex-shrink: 0;
+            animation: stream-pulse 1.4s ease-in-out infinite;
+        }
+        @keyframes stream-pulse {
+            0%, 100% { opacity: 0.35; transform: scale(0.85); }
+            50% { opacity: 1; transform: scale(1); }
+        }
+        .chat-stream-logs {
+            max-height: 9.5rem;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 0.45rem 0.7rem 0.55rem;
+            font-family: "JetBrains Mono", ui-monospace, monospace;
+            font-size: 0.6875rem;
+            line-height: 1.45;
+            background: #fafafa;
+            scroll-behavior: smooth;
+        }
+        .chat-stream-line {
+            padding: 0.12rem 0;
+            color: var(--muted-foreground);
+            word-break: break-word;
+            animation: stream-line-in 0.22s ease-out;
+        }
+        .chat-stream-line.iter {
+            color: #6366f1;
+            font-weight: 600;
+            margin-top: 0.2rem;
+        }
+        .chat-stream-line.role { color: #27272a; }
+        @keyframes stream-line-in {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .chat-stream.chat-stream-closing {
+            animation: stream-panel-out 0.32s ease forwards;
+            pointer-events: none;
+        }
+        @keyframes stream-panel-out {
+            to {
+                opacity: 0;
+                transform: translateY(-6px) scale(0.98);
+                max-height: 0;
+                margin-top: 0;
+                margin-bottom: 0;
+                padding-top: 0;
+                padding-bottom: 0;
+            }
+        }
+        .chat-result-enter {
+            animation: result-in 0.38s ease-out;
+        }
+        @keyframes result-in {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .chat-composer {
+            flex-shrink: 0;
+            border-top: 1px solid var(--border);
+            padding: 1rem 1.25rem 1.15rem;
+            background: var(--background);
+        }
+        .composer-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .btn-composer {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.45rem;
+            min-height: 2.375rem;
+            padding: 0.5rem 1.125rem;
+            border-radius: 0.625rem;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            line-height: 1;
+            white-space: nowrap;
+            transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s, transform 0.12s, opacity 0.15s;
+            outline: none;
+        }
+        .btn-composer svg {
+            width: 1rem;
+            height: 1rem;
+            flex-shrink: 0;
+        }
+        .btn-composer:focus-visible {
+            box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.14);
+        }
+        .btn-composer-send {
+            background: linear-gradient(180deg, #3f3f46 0%, #18181b 100%);
+            color: #fafafa;
+            border: 1px solid #18181b;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+        .btn-composer-send:hover:not(:disabled) {
+            background: linear-gradient(180deg, #52525b 0%, #27272a 100%);
+            box-shadow: 0 4px 12px rgba(24, 24, 27, 0.16);
+            transform: translateY(-1px);
+        }
+        .btn-composer-send:active:not(:disabled) {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+        }
+        .btn-composer-send:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .btn-composer-clear {
+            background: #fff;
+            color: #71717a;
+            border: 1px solid #e4e4e7;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+        }
+        .btn-composer-clear:hover {
+            background: #f4f4f5;
+            color: #27272a;
+            border-color: #d4d4d8;
+        }
+        .chat-input {
+            width: 100%;
+            min-height: 2.75rem;
+            max-height: 9rem;
+            resize: none;
+            border-radius: var(--radius);
+            border: 1px solid var(--input);
+            background: var(--background);
+            padding: 0.65rem 0.85rem;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            color: var(--foreground);
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .chat-input::placeholder { color: var(--muted-foreground); }
+        .chat-input:focus {
+            border-color: var(--ring);
+            box-shadow: 0 0 0 3px rgb(24 24 27 / 0.08);
+        }
+        .btn-shadcn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.35rem;
+            border-radius: calc(var(--radius) - 2px);
+            font-size: 0.8125rem;
+            font-weight: 600;
+            transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+            outline: none;
+        }
+        .btn-shadcn:focus-visible {
+            box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.12);
+        }
+        .btn-shadcn-primary {
+            background: var(--primary);
+            color: var(--primary-foreground);
+            border: 1px solid var(--primary);
+            padding: 0.5rem 1rem;
+        }
+        .btn-shadcn-primary:hover:not(:disabled) { background: #27272a; }
+        .btn-shadcn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+        .btn-shadcn-outline {
+            background: var(--background);
+            color: var(--foreground);
+            border: 1px solid var(--border);
+            padding: 0.5rem 0.85rem;
+        }
+        .btn-shadcn-outline:hover:not(:disabled) { background: var(--muted); }
+        .btn-shadcn-ghost {
+            background: transparent;
+            color: var(--muted-foreground);
+            border: 1px solid transparent;
+            padding: 0.5rem 0.75rem;
+        }
+        .btn-shadcn-ghost:hover { background: var(--muted); color: var(--foreground); }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--muted);
+            padding: 0.25rem 0.65rem;
+            font-size: 0.6875rem;
+            font-weight: 600;
+            color: var(--muted-foreground);
+        }
+        .status-badge-dot {
+            width: 0.4rem;
+            height: 0.4rem;
+            border-radius: 999px;
+            background: #22c55e;
+        }
+        .status-badge.busy .status-badge-dot {
+            background: #f59e0b;
+            animation: pulse-dot 1s infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .layout-main.trace-hidden #consoleCard { display: none; }
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+        .doc-stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+            gap: 0.75rem;
+        }
+        .doc-stat-card {
+            border: 1px solid var(--border);
+            border-radius: 0.875rem;
+            background: linear-gradient(180deg, #fff 0%, #fafafa 100%);
+            padding: 0.75rem 0.85rem;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        }
+        .doc-stat-card.accent { border-color: #bbf7d0; background: linear-gradient(180deg, #f0fdf4 0%, #fff 100%); }
+        .doc-stat-card.accent-blue { border-color: #bfdbfe; background: linear-gradient(180deg, #eff6ff 0%, #fff 100%); }
+        .doc-stat-label { font-size: 0.625rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #71717a; }
+        .doc-stat-value { font-size: 1.25rem; font-weight: 700; color: #18181b; margin-top: 0.2rem; line-height: 1.1; }
+        .doc-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.65rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            background: #fafafa;
+        }
+        .doc-table-wrap {
+            overflow: auto;
+            flex: 1;
+            min-height: 14rem;
+            max-height: min(58vh, 560px);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            background: #fff;
+        }
+        .doc-table { width: 100%; border-collapse: collapse; font-size: 0.6875rem; }
+        .doc-table th {
+            position: sticky; top: 0; z-index: 1;
+            background: #f4f4f5; text-align: left;
+            padding: 0.55rem 0.75rem; font-weight: 600; color: #52525b;
+            border-bottom: 1px solid #e4e4e7; white-space: nowrap;
+        }
+        .doc-table td { padding: 0.55rem 0.75rem; border-bottom: 1px solid #f4f4f5; vertical-align: top; color: #3f3f46; }
+        .doc-table tr:last-child td { border-bottom: none; }
+        .doc-table tr:hover td { background: #fafafa; }
+        .doc-table tr.is-busy { opacity: 0.55; pointer-events: none; }
+        .doc-badge { display: inline-flex; align-items: center; padding: 0.12rem 0.5rem; border-radius: 999px; font-size: 0.625rem; font-weight: 600; white-space: nowrap; }
+        .doc-badge-indexed { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .doc-badge-pending { background: #f4f4f5; color: #52525b; border: 1px solid #e4e4e7; }
+        .doc-badge-upload { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+        .doc-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+        .doc-btn {
+            border: 1px solid #e4e4e7; background: #fff; border-radius: 0.4375rem;
+            padding: 0.22rem 0.55rem; font-size: 0.625rem; font-weight: 600; color: #3f3f46;
+            cursor: pointer; transition: background 0.12s, border-color 0.12s;
+        }
+        .doc-btn:hover:not(:disabled) { background: #f4f4f5; border-color: #d4d4d8; }
+        .doc-btn:disabled { opacity: 0.5; cursor: wait; }
+        .doc-btn-primary { background: #18181b; color: #fff; border-color: #18181b; }
+        .doc-btn-primary:hover:not(:disabled) { background: #27272a; }
+        .doc-btn-danger { color: #b91c1c; border-color: #fecaca; background: #fff; }
+        .doc-btn-danger:hover:not(:disabled) { background: #fef2f2; }
+        .doc-upload-zone {
+            border: 1.5px dashed #d4d4d8; border-radius: 0.875rem; padding: 1.25rem 1rem;
+            text-align: center; background: linear-gradient(180deg, #fafafa 0%, #fff 100%);
+            transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+        }
+        .doc-upload-zone.dragover { border-color: #18181b; background: #f4f4f5; box-shadow: inset 0 0 0 1px #e4e4e7; }
+        .layout-main.documents-mode {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .layout-main.documents-mode #intentCard,
+        .layout-main.documents-mode #consoleCard,
+        .layout-main.documents-mode #resultPanel { display: none !important; }
+        .layout-main.documents-mode #documentsPanel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+        #documentsPanel { display: none; }
+        .layout-main.graph-mode {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
+            min-height: 0;
+            gap: 0;
+            min-height: calc(100dvh - 5.5rem);
+            max-height: calc(100dvh - 5.5rem);
+            overflow: hidden;
+        }
+        @media (min-width: 1024px) {
+            .layout-main.graph-mode {
+                min-height: calc(100vh - 6.5rem);
+                max-height: calc(100vh - 6.5rem);
+            }
+            .layout-main.graph-mode.trace-hidden {
+                min-height: calc(100vh - 7rem);
+                max-height: calc(100vh - 7rem);
+            }
+        }
+        .layout-main.graph-mode #intentCard,
+        .layout-main.graph-mode #consoleCard,
+        .layout-main.graph-mode #resultPanel,
+        .layout-main.graph-mode #documentsPanel { display: none !important; }
+        #dagGraphPanel { display: none; }
+        .layout-main.graph-mode #dagGraphPanel {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
+            min-height: 0;
+            height: 100%;
+            overflow: hidden;
+            padding: 0.75rem 1rem 1rem;
+            gap: 0.5rem;
+        }
+        .dag-graph-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem 0.75rem;
+            flex-shrink: 0;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .dag-graph-toolbar-title {
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: #18181b;
+            margin-right: auto;
+        }
+        .dag-graph-query-line {
+            flex: 1 1 100%;
+            font-size: 0.6875rem;
+            line-height: 1.35;
+            color: #52525b;
+            max-height: 2.7em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .dag-graph-body {
+            display: flex;
+            flex: 1 1 auto;
+            min-height: 0;
+            gap: 0;
+            border: 1px solid var(--border);
+            border-radius: calc(var(--radius) + 4px);
+            overflow: hidden;
+            background: #fafafa;
+        }
+        #dagGraphNetwork {
+            flex: 1 1 auto;
+            min-width: 0;
+            min-height: 240px;
+            height: 100%;
+            position: relative;
+            background: #fafafa;
+        }
+        #dagGraphNetwork .vis-network,
+        #dagGraphNetwork .vis-network canvas {
+            outline: none;
+        }
+        .dag-graph-aside {
+            flex: 0 0 min(300px, 34vw);
+            max-width: 340px;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            border-left: 1px solid var(--border);
+            background: #fff;
+        }
+        .dag-graph-aside-section {
+            padding: 0.65rem 0.75rem;
+            border-bottom: 1px solid #f4f4f5;
+            min-height: 0;
+        }
+        .dag-graph-aside-section.scroll {
+            flex: 1 1 auto;
+            overflow-y: auto;
+        }
+        .dag-graph-aside h3 {
+            font-size: 0.625rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #71717a;
+            margin-bottom: 0.35rem;
+        }
+        .dag-graph-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem 0.5rem;
+            font-size: 0.625rem;
+            color: #52525b;
+        }
+        .dag-graph-stats span {
+            padding: 0.1rem 0.4rem;
+            border-radius: 4px;
+            background: #f4f4f5;
+        }
+        .dag-graph-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem 0.65rem;
+            font-size: 0.5625rem;
+            color: var(--muted-foreground);
+        }
+        .dag-graph-legend span { display: inline-flex; align-items: center; gap: 0.3rem; }
+        .dag-graph-legend i {
+            display: inline-block;
+            width: 0.55rem;
+            height: 0.55rem;
+            border-radius: 3px;
+            border: 1px solid #a1a1aa;
+        }
+        #dagGraphNodeDetail {
+            font-size: 0.6875rem;
+            line-height: 1.45;
+            color: #3f3f46;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        #dagGraphMemoryList {
+            font-size: 0.625rem;
+            line-height: 1.4;
+            color: #52525b;
+            max-height: 10rem;
+            overflow-y: auto;
+        }
+        #dagGraphMemoryList .mem-hit {
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #f4f4f5;
+        }
+        #dagGraphMemoryList .mem-hit:last-child { border-bottom: none; margin-bottom: 0; }
+        #dagGraphStatus {
+            flex-shrink: 0;
+            font-size: 0.625rem;
+            color: #a1a1aa;
+            padding-top: 0.25rem;
+        }
+        @media (max-width: 900px) {
+            .dag-graph-body { flex-direction: column; }
+            .dag-graph-aside {
+                flex: 0 0 auto;
+                max-width: none;
+                max-height: 38vh;
+            }
+            #dagGraphNetwork { min-height: 45vh; }
+        }
+        .rag-kind-badge { font-size: 0.5625rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.1rem 0.4rem; border-radius: 999px; }
+        .rag-kind-semantic { background: #ede9fe; color: #5b21b6; border: 1px solid #ddd6fe; }
+        .rag-kind-keyword { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+        .rag-kind-cross-doc { background: #ccfbf1; color: #0f766e; border: 1px solid #99f6e4; }
+        .rag-query-card { border: 1px solid #e4e4e7; border-radius: 0.625rem; background: #fff; padding: 0.65rem 0.75rem; text-align: left; width: 100%; transition: border-color 0.12s, box-shadow 0.12s; }
+        .rag-query-card:hover { border-color: #c4b5fd; box-shadow: 0 1px 3px rgba(91,33,182,0.08); }
+        .rag-welcome-chip { border-radius: 999px; border: 1px solid #ddd6fe; background: #f5f3ff; padding: 0.2rem 0.55rem; font-size: 0.625rem; font-weight: 600; color: #5b21b6; cursor: pointer; transition: background 0.12s; }
+        .rag-welcome-chip:hover { background: #ede9fe; }
+        .base-welcome-chip { border-radius: 999px; border: 1px solid #bbf7d0; background: #ecfdf5; padding: 0.2rem 0.55rem; font-size: 0.625rem; font-weight: 600; color: #166534; cursor: pointer; transition: background 0.12s; }
+        .base-welcome-chip:hover { background: #d1fae5; }
+    </style>
+</head>
+<body class="min-h-screen text-slate-900 antialiased">
+
+<!-- Brand mark: vector layers + recall node -->
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+        <symbol id="logo-mark" viewBox="0 0 24 24" fill="none">
+            <path stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.38" d="M7 7.5 12 11M17 7.5 12 11"/>
+            <path stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M12 12.5 12 16.5"/>
+            <circle cx="7" cy="6.75" r="1.7" fill="currentColor" opacity="0.72"/>
+            <circle cx="17" cy="6.75" r="1.7" fill="currentColor" opacity="0.72"/>
+            <circle cx="12" cy="5.25" r="1.7" fill="currentColor"/>
+            <circle cx="12" cy="11" r="1.85" fill="currentColor" opacity="0.88"/>
+            <circle cx="12" cy="17.6" r="2" fill="currentColor"/>
+        </symbol>
+    </defs>
+</svg>
+
+<div class="mx-auto flex max-w-[1600px] flex-col gap-6 px-4 py-8 pb-12 lg:flex-row lg:items-start lg:gap-8 xl:gap-10">
+    <aside id="sidebarAside" class="w-full lg:w-[300px] lg:shrink-0">
+        <div class="card-elevated sidebar-shell overflow-hidden rounded-2xl">
+            <div class="p-5 border-b border-zinc-200 bg-zinc-50/50">
+                <div class="brand-lockup">
+                    <div class="brand-logo overflow-hidden p-0.5" aria-hidden="true">
+                        <img src="/Images/app-icon.svg" alt="" width="28" height="28" class="rounded-md"/>
+                    </div>
+                    <div class="brand-meta">
+                        <div class="brand-title-row">
+                            <h1 class="brand-wordmark">Cognitive</h1>
+                            <span class="brand-pill">DAG</span>
+                        </div>
+                        <p class="brand-subtitle">Planner skills graph</p>
+                    </div>
+                </div>
+                <p class="mt-3 text-xs leading-relaxed text-zinc-500">DAG orchestrator with parallel fan-out, critic recovery, coder sandbox, and live trace.</p>
+            </div>
+
+            <div id="sidebarTablist" class="flex flex-col divide-y divide-zinc-200 border-b border-zinc-200" role="tablist" aria-label="Sidebar sections">
+                <button type="button" id="tabOverviewBtn" role="tab" aria-selected="true" aria-controls="panelOverview" class="sidebar-tab-btn tab-trigger border-l-zinc-900 bg-zinc-50 px-3 py-3 text-xs font-medium leading-snug text-zinc-900 transition hover:bg-zinc-50 sm:text-[13px]">
+                    <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z"/></svg>
+                    Overview
+                </button>
+                <button type="button" id="tabDocumentsBtn" role="tab" aria-selected="false" aria-controls="panelDocuments" class="sidebar-tab-btn tab-trigger flex flex-wrap items-center gap-x-2 gap-y-1 border-l-transparent px-3 py-3 text-xs font-semibold leading-snug text-slate-500 transition hover:bg-slate-50/80 hover:text-slate-700 sm:text-[13px]">
+                    <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>
+                    <span>Documents</span>
+                    <span id="docIndexedBadge" class="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-zinc-600 tabular-nums">—</span>
+                </button>
+                <button type="button" id="tabTestCasesBtn" role="tab" aria-selected="false" aria-controls="panelTestCases" class="sidebar-tab-btn tab-trigger flex flex-wrap items-center gap-x-2 gap-y-1 border-l-transparent px-3 py-3 text-xs font-semibold leading-snug text-slate-500 transition hover:bg-slate-50/80 hover:text-slate-700 sm:text-[13px]">
+                    <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+                    <span>DAG Queries</span>
+                    <span class="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-zinc-600 tabular-nums">10</span>
+                </button>
+                <button type="button" id="tabGraphBtn" role="tab" aria-selected="false" aria-controls="panelGraph" class="sidebar-tab-btn tab-trigger flex flex-wrap items-center gap-x-2 gap-y-1 border-l-transparent px-3 py-3 text-xs font-semibold leading-snug text-slate-500 transition hover:bg-slate-50/80 hover:text-slate-700 sm:text-[13px]">
+                    <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1.5m3.75 3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
+                    <span>Graph</span>
+                </button>
+                <button type="button" id="tabRagBtn" role="tab" aria-selected="false" aria-controls="panelRag" class="sidebar-tab-btn tab-trigger flex flex-wrap items-center gap-x-2 gap-y-1 border-l-transparent px-3 py-3 text-xs font-semibold leading-snug text-slate-500 transition hover:bg-slate-50/80 hover:text-slate-700 sm:text-[13px]">
+                    <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.375m0 0v3.375m0-3.375h-16.5"/></svg>
+                    <span>RAG Queries</span>
+                    <span class="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-zinc-600 tabular-nums">5</span>
+                </button>
+            </div>
+
+            <div id="panelOverview" role="tabpanel" aria-labelledby="tabOverviewBtn" class="space-y-4 p-5">
+                <div>
+                    <h2 class="text-sm font-semibold text-slate-900">Connection</h2>
+                    <p class="mt-1 text-[11px] leading-snug text-slate-500">Live agent trace streaming status.</p>
+                    <p id="streamStatus" class="mt-3 inline-flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium text-slate-600 shadow-sm">
+                        <span id="streamDot" class="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400"></span>
+                        <span id="streamLabel">Connecting…</span>
+                    </p>
+                </div>
+                <div class="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3.5">
+                    <h3 class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">DAG pipeline</h3>
+                    <div class="pipeline-strip mt-2.5" id="pipelineStrip" aria-hidden="true">
+                        <div class="pipeline-step"><span>Plan</span>Graph</div>
+                        <div class="pipeline-step"><span>Run</span>Skills</div>
+                        <div class="pipeline-step"><span>Crit</span>Verify</div>
+                        <div class="pipeline-step"><span>Out</span>Format</div>
+                    </div>
+                </div>
+                <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                    <h3 class="text-[11px] font-bold uppercase tracking-wide text-slate-500">How it works</h3>
+                    <ul class="role-list mt-2 space-y-2 text-[11px] leading-snug text-slate-600">
+                        <li><span class="role-name">Planner</span><span>Emits the next skill nodes as JSON; extends the graph each wave.</span></li>
+                        <li><span class="role-name">Executor</span><span>Runs every ready node concurrently (<code class="text-[10px]">asyncio.gather</code>).</span></li>
+                        <li><span class="role-name">Critic</span><span>Auto-spliced after distiller; tool-grounded pass/fail triggers recovery replan.</span></li>
+                        <li><span class="role-name">Formatter</span><span>Terminal skill — renders the final user-facing answer.</span></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div id="panelDocuments" role="tabpanel" aria-labelledby="tabDocumentsBtn" class="hidden p-4 space-y-3">
+                <p class="text-xs leading-snug text-slate-500">Upload, index, and manage documents. Bulk-index <code class="text-[10px]">research_papers/</code> (R1–R5) or <code class="text-[10px]">papers/</code> (eval E–H) in the document manager.</p>
+                <button type="button" id="openDocManagerBtn" class="btn-shadcn btn-shadcn-outline w-full text-xs">Open document manager</button>
+            </div>
+
+            <div id="panelGraph" role="tabpanel" aria-labelledby="tabGraphBtn" class="hidden p-4 space-y-2">
+                <p class="text-xs leading-snug text-slate-500">Opens the full-width graph in the main panel. Sessions live under <code class="text-[10px]">state/sessions/</code>.</p>
+                <p id="dagGraphSidebarMeta" class="text-[10px] text-zinc-400">No session loaded</p>
+            </div>
+
+            <div id="panelTestCases" role="tabpanel" aria-labelledby="tabTestCasesBtn" class="hidden p-4 flex flex-col gap-3 min-h-0">
+                <p class="text-xs leading-snug text-slate-500 shrink-0">Ten built-in DAG demo queries across five capability groups. Design blocks cover parallel fan-out and critic recovery. Logs: <code class="text-[10px]">logs/dag/</code></p>
+                <div id="dagDesignQueries" class="shrink-0 flex flex-col gap-2" aria-label="DAG design scenarios"></div>
+                <div id="testCaseList" class="sidebar-examples-scroll flex flex-col overflow-y-auto pb-1 scrollbar-thin pr-0.5 min-h-0">
+                    <p class="text-xs text-slate-400 py-4 text-center">Loading DAG queries…</p>
+                </div>
+
+                <button type="button" id="resetStateBtn" class="shrink-0 w-full text-center border border-red-200 hover:bg-red-50 text-red-700 bg-white hover:border-red-300 rounded-xl py-2.5 text-xs font-bold transition outline-none">
+                    Clear Durable State (state/)
+                </button>
+            </div>
+
+            <div id="panelRag" role="tabpanel" aria-labelledby="tabRagBtn" class="hidden p-4 space-y-3">
+                <div class="rounded-lg border border-violet-200/80 bg-violet-50/60 p-3">
+                    <p class="text-[11px] font-semibold text-violet-900">Custom corpus eval</p>
+                    <p id="ragRequirementsText" class="mt-1 text-[10px] leading-snug text-violet-900/75">Five queries against <code class="text-[9px]">research_papers/</code>. Each must pass with the index and fail on empty memory. At least two use semantic recall.</p>
+                </div>
+                <div id="ragQueryList" class="sidebar-examples-scroll flex flex-col gap-2.5 overflow-y-auto pb-1 scrollbar-thin pr-0.5 min-h-[8rem]">
+                    <p class="text-xs text-slate-400 py-4 text-center">Loading queries…</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main id="layoutMain" class="layout-main trace-hidden min-w-0 flex-1">
+        <div id="intentCard" class="chat-card card-elevated rounded-xl border border-zinc-200 bg-white shadow-sm">
+            <div class="chat-header">
+                <div class="brand-lockup min-w-0">
+                    <div class="brand-logo brand-logo-sm hidden sm:flex" aria-hidden="true">
+                        <svg width="14" height="14"><use href="#logo-mark"/></svg>
+                    </div>
+                    <div class="brand-meta min-w-0">
+                        <div class="brand-title-row">
+                            <h2 class="brand-wordmark text-sm">Cognitive</h2>
+                            <span class="brand-pill">DAG</span>
+                        </div>
+                        <p class="brand-subtitle text-[11px]">Planner → Skills → Critic → Formatter</p>
+                    </div>
+                </div>
+                <div class="flex shrink-0 flex-wrap items-center gap-2">
+                    <span id="agentStatusBadge" class="status-badge"><span class="status-badge-dot"></span><span id="agentStatusLabel">Ready</span></span>
+                    <button type="button" id="toggleTraceBtn" class="btn-shadcn btn-shadcn-outline text-xs">Show trace</button>
+                    <button type="button" id="clearChatBtn" class="btn-shadcn btn-shadcn-ghost text-xs hidden sm:inline-flex">Clear chat</button>
+                </div>
+            </div>
+
+            <div id="chatMessages" class="chat-messages scrollbar-thin" role="log" aria-live="polite" aria-relevant="additions">
+                <div id="chatWelcome" class="chat-welcome">
+                    <div class="chat-welcome-icon overflow-hidden rounded-xl" aria-hidden="true">
+                        <img src="/Images/app-icon.svg" alt="" width="40" height="40" class="rounded-xl"/>
+                    </div>
+                    <div class="brand-title-row justify-center">
+                        <h3 class="brand-wordmark text-base">Cognitive</h3>
+                        <span class="brand-pill">DAG Agent</span>
+                    </div>
+                    <p class="mt-2 text-xs leading-relaxed text-zinc-500">DAG orchestrator: Planner emits skill graphs, Executor runs parallel ready nodes, Critic verifies and triggers recovery.</p>
+                </div>
+            </div>
+
+            <div class="chat-composer">
+                <label for="query" class="sr-only">Message</label>
+                <textarea id="query" name="query" rows="2" class="chat-input" placeholder="Try: Say hello. — or pick a query from DAG Queries…" autocomplete="off"></textarea>
+                <div id="formHint" class="mt-2 min-h-[1rem] text-xs text-amber-700" role="status" aria-live="polite"></div>
+                <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <div class="composer-actions">
+                        <button id="runBtn" type="button" class="btn-composer btn-composer-send">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                            Send
+                        </button>
+                        <button id="clearIntentBtn" type="button" class="btn-composer btn-composer-clear">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                            Clear
+                        </button>
+                    </div>
+                    <span class="text-[10px] text-zinc-400">Enter to send · Shift+Enter new line</span>
+                </div>
+            </div>
+        </div>
+
+        <section id="documentsPanel" class="card-elevated scroll-mt-6 flex min-h-0 flex-col gap-5 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-6">
+            <div class="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-100 pb-4">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-900 text-white">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>
+                        </span>
+                        <div>
+                            <h2 class="text-base font-semibold text-zinc-900">Document manager</h2>
+                            <p class="text-xs text-zinc-500">Upload · index · reindex · delete from FAISS</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" id="docRefreshBtn" class="btn-shadcn btn-shadcn-outline text-xs">Refresh</button>
+                    <button type="button" id="docBackChatBtn" class="btn-shadcn btn-shadcn-ghost text-xs">← Chat</button>
+                </div>
+            </div>
+
+            <div id="docStatsGrid" class="doc-stat-grid shrink-0" aria-live="polite"></div>
+
+            <div class="bulk-index-grid shrink-0">
+                <div class="bulk-index-card">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="flex items-start gap-3 min-w-0">
+                            <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-800 shadow-sm" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.375m0 0v3.375m0-3.375h-16.5"/></svg>
+                            </span>
+                            <div class="min-w-0">
+                                <p class="text-sm font-semibold text-zinc-900">Research corpus (R1–R5)</p>
+                                <p class="mt-0.5 text-xs leading-snug text-zinc-500">Bulk-index <code class="rounded bg-zinc-100 px-1 py-0.5 text-[10px]">research_papers/</code> sidecars (50 arXiv papers).</p>
+                            </div>
+                        </div>
+                        <button type="button" id="docBulkIndexBtn" class="btn-shadcn btn-shadcn-primary shrink-0 text-xs">Index 50 papers</button>
+                    </div>
+                </div>
+                <div class="bulk-index-card">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="flex items-start gap-3 min-w-0">
+                            <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>
+                            </span>
+                            <div class="min-w-0">
+                                <p class="text-sm font-semibold text-zinc-900">Eval papers (E–H)</p>
+                                <p class="mt-0.5 text-xs leading-snug text-zinc-500">Bulk-index <code class="rounded bg-zinc-100 px-1 py-0.5 text-[10px]">papers/*.md</code> (attention, ReAct, CoT, …).</p>
+                            </div>
+                        </div>
+                        <button type="button" id="docBulkIndexPapersBtn" class="btn-shadcn btn-shadcn-outline shrink-0 text-xs border-emerald-200 text-emerald-800 hover:bg-emerald-50">Index papers/</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="doc-upload-zone shrink-0" id="docUploadZone">
+                <input type="file" id="docUploadInput" class="sr-only" accept=".pdf,.md,.txt,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.webp" multiple />
+                <p class="text-sm font-medium text-zinc-800">Drop files here or <button type="button" id="docUploadPickBtn" class="font-semibold underline decoration-zinc-300 underline-offset-2 text-zinc-900 hover:decoration-zinc-500">browse</button></p>
+                <p class="mt-1 text-[11px] text-zinc-500">Saved to <code class="rounded bg-zinc-100 px-1 py-0.5 text-[10px]">sandbox/uploads/</code> · PDF, Office, images, markdown</p>
+                <p id="docUploadStatus" class="mt-2 min-h-[1rem] text-xs font-medium text-emerald-700" role="status"></p>
+            </div>
+
+            <div class="doc-toolbar shrink-0">
+                <label class="text-[11px] font-semibold text-zinc-600">Filter</label>
+                <select id="docFilterSelect" class="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-800 shadow-sm">
+                    <option value="all">All files</option>
+                    <option value="indexed">Indexed only</option>
+                    <option value="not_indexed">Not indexed</option>
+                    <option value="uploads">Uploads</option>
+                </select>
+                <input type="search" id="docSearchInput" placeholder="Search path or filename…" class="min-w-[11rem] flex-1 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs shadow-sm" />
+                <span id="docFilterCount" class="ml-auto text-[10px] font-medium tabular-nums text-zinc-400"></span>
+            </div>
+
+            <div class="doc-table-wrap scrollbar-thin min-h-0 flex-1">
+                <table class="doc-table" id="docTable">
+                    <thead>
+                        <tr>
+                            <th>Document</th>
+                            <th>Status</th>
+                            <th>Chunks</th>
+                            <th>Extraction</th>
+                            <th>Metadata</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="docTableBody">
+                        <tr><td colspan="6" class="text-center text-zinc-400 py-6">Loading catalog…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="dagGraphPanel" class="card-elevated scroll-mt-6 flex min-h-0 flex-col rounded-2xl border border-zinc-200 bg-white shadow-sm">
+            <div class="dag-graph-toolbar">
+                <span class="dag-graph-toolbar-title">DAG graph</span>
+                <label class="sr-only" for="dagGraphSessionSelect">Session</label>
+                <select id="dagGraphSessionSelect" class="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-800 shadow-sm min-w-[11rem] max-w-[14rem]"></select>
+                <button type="button" id="dagGraphRefreshBtn" class="btn-shadcn btn-shadcn-outline text-xs">Refresh</button>
+                <button type="button" id="dagGraphFitBtn" class="btn-shadcn btn-shadcn-outline text-xs">Fit</button>
+                <label class="inline-flex items-center gap-1.5 text-xs text-zinc-600">
+                    <input type="checkbox" id="dagGraphAutoRefresh" class="rounded border-zinc-300" />
+                    Auto (live run)
+                </label>
+                <button type="button" id="dagBackChatBtn" class="btn-shadcn btn-shadcn-ghost text-xs">← Chat</button>
+                <p id="dagGraphQueryPreview" class="dag-graph-query-line"></p>
+            </div>
+            <div class="dag-graph-body">
+                <div id="dagGraphNetwork" role="img" aria-label="DAG visualization"></div>
+                <aside class="dag-graph-aside" aria-label="Graph details">
+                    <div class="dag-graph-aside-section">
+                        <h3>Session</h3>
+                        <div id="dagGraphStats" class="dag-graph-stats"></div>
+                        <div class="dag-graph-legend mt-2" aria-hidden="true">
+                            <span><i style="background:#dcfce7;border-color:#22c55e"></i> done</span>
+                            <span><i style="background:#fef3c7;border-color:#f59e0b"></i> run</span>
+                            <span><i style="background:#e4e4e7;border-color:#a1a1aa"></i> wait</span>
+                            <span><i style="background:#fee2e2;border-color:#ef4444"></i> fail</span>
+                        </div>
+                    </div>
+                    <div class="dag-graph-aside-section">
+                        <h3>Selected node</h3>
+                        <div id="dagGraphNodeDetail">Click a node to inspect skill, status, and output preview.</div>
+                    </div>
+                    <div class="dag-graph-aside-section scroll">
+                        <h3>Memory hits (session start)</h3>
+                        <div id="dagGraphMemoryList">No FAISS hits for this query (or not snapshotted yet).</div>
+                    </div>
+                </aside>
+            </div>
+            <p id="dagGraphStatus">Load a session or run a query to populate the graph.</p>
+        </section>
+
+        <section id="resultPanel" class="hidden" aria-hidden="true"><div id="resultBody"></div></section>
+
+        <div id="consoleCard" class="console-card card-elevated min-h-0 shrink-0 rounded-2xl border border-zinc-200/90 bg-white p-4 shadow-sm sm:p-5">
+            <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <h2 class="text-sm font-semibold text-slate-900">Live console</h2>
+                    <p class="mt-0.5 text-xs text-slate-500"><span class="font-medium text-slate-700">[perception]</span> goals · <span class="font-medium text-slate-700">[decision]</span> tool or answer · <span class="font-medium text-slate-700">[action]</span> results · <span class="font-medium text-slate-700">[memory]</span> recall</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" id="clearBtn" class="btn-shadcn btn-shadcn-outline text-[11px] py-1.5">Clear trace</button>
+                    <button type="button" id="consoleCollapseBtn" class="btn-shadcn btn-shadcn-outline text-[11px] py-1.5" aria-expanded="true" aria-controls="consoleTerminal">
+                        Hide logs
+                    </button>
+                    <button type="button" id="consoleExpandBtn" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50" title="Toggle taller log viewport">
+                        Taller
+                    </button>
+                    <span class="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">Read-only</span>
+                </div>
+            </div>
+            <div id="consoleTerminal" class="terminal-wrap flex min-h-0 flex-1 flex-col">
+                <div class="terminal-chrome shrink-0">
+                    <span class="dot dot-r" aria-hidden="true"></span>
+                    <span class="dot dot-y" aria-hidden="true"></span>
+                    <span class="dot dot-g" aria-hidden="true"></span>
+                    <span class="terminal-title">Live trace</span>
+                </div>
+                <div id="logs" class="log-scroll scrollbar-thin min-h-0 flex-1">
+                    <div class="log-placeholder text-sm">Waiting for stream… logs appear here when you run the agent.</div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+(function () {
+    const logsDiv = document.getElementById('logs');
+    const runBtn = document.getElementById('runBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const clearIntentBtn = document.getElementById('clearIntentBtn');
+    const queryInput = document.getElementById('query');
+    const streamDot = document.getElementById('streamDot');
+    const streamLabel = document.getElementById('streamLabel');
+    const tabOverviewBtn = document.getElementById('tabOverviewBtn');
+    const tabDocumentsBtn = document.getElementById('tabDocumentsBtn');
+    const tabTestCasesBtn = document.getElementById('tabTestCasesBtn');
+    const tabGraphBtn = document.getElementById('tabGraphBtn');
+    const tabRagBtn = document.getElementById('tabRagBtn');
+    const panelOverview = document.getElementById('panelOverview');
+    const panelDocuments = document.getElementById('panelDocuments');
+    const panelGraph = document.getElementById('panelGraph');
+    const panelTestCases = document.getElementById('panelTestCases');
+    const panelRag = document.getElementById('panelRag');
+
+    const sidebarAside = document.getElementById('sidebarAside');
+    const intentCard = document.getElementById('intentCard');
+    const formHint = document.getElementById('formHint');
+    const consoleCard = document.getElementById('consoleCard');
+    const consoleCollapseBtn = document.getElementById('consoleCollapseBtn');
+    const consoleExpandBtn = document.getElementById('consoleExpandBtn');
+    const resultPanel = document.getElementById('resultPanel');
+    const resultBody = document.getElementById('resultBody');
+    const chatMessages = document.getElementById('chatMessages');
+    const chatWelcome = document.getElementById('chatWelcome');
+    const agentStatusBadge = document.getElementById('agentStatusBadge');
+    const agentStatusLabel = document.getElementById('agentStatusLabel');
+    const toggleTraceBtn = document.getElementById('toggleTraceBtn');
+    const clearChatBtn = document.getElementById('clearChatBtn');
+    const layoutMain = document.getElementById('layoutMain');
+    const documentsPanel = document.getElementById('documentsPanel');
+    const docStatsGrid = document.getElementById('docStatsGrid');
+    const docTableBody = document.getElementById('docTableBody');
+    const docIndexedBadge = document.getElementById('docIndexedBadge');
+    const docUploadZone = document.getElementById('docUploadZone');
+    const docUploadInput = document.getElementById('docUploadInput');
+    const docUploadPickBtn = document.getElementById('docUploadPickBtn');
+    const docUploadStatus = document.getElementById('docUploadStatus');
+    const docRefreshBtn = document.getElementById('docRefreshBtn');
+    const docBulkIndexBtn = document.getElementById('docBulkIndexBtn');
+    const docBulkIndexPapersBtn = document.getElementById('docBulkIndexPapersBtn');
+    const docBackChatBtn = document.getElementById('docBackChatBtn');
+    const docFilterSelect = document.getElementById('docFilterSelect');
+    const docSearchInput = document.getElementById('docSearchInput');
+    const docFilterCount = document.getElementById('docFilterCount');
+    const openDocManagerBtn = document.getElementById('openDocManagerBtn');
+    const openGraphViewBtn = document.getElementById('openGraphViewBtn');
+    const dagGraphPanel = document.getElementById('dagGraphPanel');
+    const dagGraphNetworkEl = document.getElementById('dagGraphNetwork');
+    const dagGraphSessionSelect = document.getElementById('dagGraphSessionSelect');
+    const dagGraphRefreshBtn = document.getElementById('dagGraphRefreshBtn');
+    const dagGraphFitBtn = document.getElementById('dagGraphFitBtn');
+    const dagGraphAutoRefresh = document.getElementById('dagGraphAutoRefresh');
+    const dagBackChatBtn = document.getElementById('dagBackChatBtn');
+    const dagGraphStatus = document.getElementById('dagGraphStatus');
+    const dagGraphQueryPreview = document.getElementById('dagGraphQueryPreview');
+    const dagGraphSidebarMeta = document.getElementById('dagGraphSidebarMeta');
+    const dagGraphStats = document.getElementById('dagGraphStats');
+    const dagGraphNodeDetail = document.getElementById('dagGraphNodeDetail');
+    const dagGraphMemoryList = document.getElementById('dagGraphMemoryList');
+
+    if (
+        !logsDiv ||
+        !runBtn ||
+        !clearBtn ||
+        !clearIntentBtn ||
+        !queryInput ||
+        !streamDot ||
+        !streamLabel ||
+        !tabOverviewBtn ||
+        !tabTestCasesBtn ||
+        !tabRagBtn ||
+        !panelOverview ||
+        !panelTestCases ||
+        !panelRag ||
+        !chatMessages
+    ) {
+        console.warn('[concierge-ui] Missing required DOM nodes; script aborted.');
+        return;
+    }
+
+    function setFormHint(msg) {
+        if (formHint) formHint.textContent = msg || '';
+    }
+
+    const SANDBOX_PATH_RE = /\b((?:papers|research_papers|rag_corpus|uploads)\/[\w.\-]+(?:\.[\w.\-]+)?)\b/gi;
+
+    function extractSandboxPaths(text) {
+        if (!text) return [];
+        const seen = new Set();
+        const out = [];
+        let m;
+        const re = new RegExp(SANDBOX_PATH_RE.source, SANDBOX_PATH_RE.flags);
+        while ((m = re.exec(text)) !== null) {
+            const p = m[1].replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+            if (!p || seen.has(p)) continue;
+            seen.add(p);
+            out.push(p);
+        }
+        return out;
+    }
+
+    function updateComposerHint() {
+        if (!formHint || !queryInput) return;
+        if (agentRunActive || indexJobActive) return;
+        const text = queryInput.value.trim();
+        if (!text) {
+            setFormHint('');
+            return;
+        }
+        const lower = text.toLowerCase();
+        const paths = extractSandboxPaths(text);
+        if (paths.length && (lower.includes('index') || /(?:papers|research_papers)\//i.test(text))) {
+            const bulk =
+                /\bevery\b|\ball \.md|\beach \b|\bbulk\b|\bdirectory\b|\bunder papers\b|\bunder research_papers\b/.test(
+                    lower
+                );
+            setFormHint(
+                bulk
+                    ? 'Local path detected — agent will use index_directory, not web search.'
+                    : 'Local path detected — agent will use index_document or search_knowledge, not web search.'
+            );
+            return;
+        }
+        if (/across (these|the) papers|papers i have indexed|from indexed/i.test(text)) {
+            setFormHint('Recall query — expects search_knowledge over indexed papers (run F Run 1 first).');
+            return;
+        }
+        setFormHint('');
+    }
+
+    function styleTabSelected(btn, on) {
+        btn.classList.toggle('border-l-zinc-900', on);
+        btn.classList.toggle('bg-zinc-50', on);
+        btn.classList.toggle('border-l-transparent', !on);
+        btn.classList.toggle('bg-transparent', !on);
+        btn.classList.toggle('text-zinc-900', on);
+        btn.classList.toggle('text-zinc-500', !on);
+    }
+
+    const ASSISTANT_AVATAR_HTML =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+        '<path stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M12 4 5 7.5 12 11l7-3.5L12 4Z"/>' +
+        '<path stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" d="M5 12.5 12 16l7-3.5"/>' +
+        '<path stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" opacity="0.35" d="M5 17.5 12 21l7-3.5"/>' +
+        '<circle cx="12" cy="9.5" r="1.6" fill="currentColor"/>' +
+        '</svg>';
+
+    function autoResizeTextarea(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 144) + 'px';
+    }
+
+    const TAB_ORDER = ['overview', 'documents', 'testcases', 'graph', 'rag'];
+    const tabButtons = {
+        overview: tabOverviewBtn,
+        documents: tabDocumentsBtn,
+        testcases: tabTestCasesBtn,
+        graph: tabGraphBtn,
+        rag: tabRagBtn,
+    };
+    const panels = {
+        overview: panelOverview,
+        documents: panelDocuments,
+        testcases: panelTestCases,
+        graph: panelGraph,
+        rag: panelRag,
+    };
+    let docCatalogCache = [];
+    let docCatalogLoading = false;
+
+    let activeTabName = 'overview';
+    let pendingResultMarkdown = null;
+    let chatTypingEl = null;
+    let chatStreamLogsEl = null;
+    let agentRunActive = false;
+    let indexJobActive = false;
+    let streamClosing = false;
+    let traceVisible = false;
+    const MAX_STREAM_LINES = 12;
+    const STREAM_CLOSE_MS = 320;
+    /** Dedupe: agent logs both >>> FINAL ANSWER <<< and [UI_RESULT_JSON] for the same text. */
+    let lastRenderedResult = '';
+
+    function syncComposerControls() {
+        if (runBtn) runBtn.disabled = agentRunActive || indexJobActive;
+    }
+
+    function setIndexBusy(busy) {
+        indexJobActive = !!busy;
+        const indexing = indexJobActive;
+        if (docBulkIndexBtn) docBulkIndexBtn.disabled = indexing;
+        if (docBulkIndexPapersBtn) docBulkIndexPapersBtn.disabled = indexing;
+        syncComposerControls();
+    }
+
+    function _operation_busy() {
+        if (agentRunActive) {
+            appendLog('Agent is already running — wait for the current run to finish.');
+            return true;
+        }
+        if (indexJobActive) {
+            appendLog('Indexing is in progress — wait for it to finish.');
+            return true;
+        }
+        return false;
+    }
+
+    function setAgentStatus(running) {
+        if (!agentStatusBadge || !agentStatusLabel) return;
+        agentStatusBadge.classList.toggle('busy', !!running);
+        agentStatusLabel.textContent = running ? 'Thinking…' : 'Ready';
+    }
+
+    function hideChatWelcome() {
+        if (chatWelcome) chatWelcome.style.display = 'none';
+    }
+
+    function scrollChatToBottom() {
+        if (!chatMessages) return;
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function markdownToHtml(md) {
+        const text = md || '';
+        if (typeof marked !== 'undefined' && typeof marked.parse === 'function') {
+            try {
+                let html = marked.parse(text, { breaks: true, gfm: true, headerIds: false, mangle: false });
+                if (typeof DOMPurify !== 'undefined' && typeof DOMPurify.sanitize === 'function') {
+                    html = DOMPurify.sanitize(html, {
+                        USE_PROFILES: { html: true },
+                        ADD_ATTR: ['target', 'rel', 'class', 'style', 'aria-hidden', 'aria-label'],
+                    });
+                }
+                return html;
+            } catch (err) {
+                console.warn('[chat-ui] marked.parse failed', err);
+            }
+        }
+        return '<p class="whitespace-pre-wrap">' + escapeHtmlPlain(text) + '</p>';
+    }
+
+    function renderMathIn(el) {
+        if (!el || typeof renderMathInElement !== 'function') return;
+        try {
+            renderMathInElement(el, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '$', right: '$', display: false },
+                    { left: '\\(', right: '\\)', display: false },
+                    { left: '\\[', right: '\\]', display: true },
+                ],
+                throwOnError: false,
+                strict: false,
+            });
+        } catch (err) {
+            console.warn('[chat-ui] KaTeX render failed', err);
+        }
+    }
+
+    function enhanceRichContent(el) {
+        if (!el) return;
+        renderMathIn(el);
+    }
+
+    function appendChatMessage(role, content, opts) {
+        opts = opts || {};
+        if (!chatMessages || !content) return null;
+        hideChatWelcome();
+
+        const row = document.createElement('div');
+        row.className = 'chat-row chat-row-' + role;
+        if (opts.system) row.className = 'chat-row chat-row-system';
+
+        if (!opts.system) {
+            const avatar = document.createElement('div');
+            avatar.className = 'chat-avatar';
+            if (role === 'user') {
+                avatar.textContent = 'You';
+            } else {
+                avatar.innerHTML = ASSISTANT_AVATAR_HTML;
+            }
+            avatar.setAttribute('aria-hidden', 'true');
+            row.appendChild(avatar);
+        }
+
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble';
+        if (role === 'assistant' && opts.markdown) {
+            bubble.classList.add('result-rich');
+            if (opts.enterAnim) bubble.classList.add('chat-result-enter');
+            bubble.innerHTML = markdownToHtml(content);
+            enhanceRichContent(bubble);
+        } else if (role === 'user') {
+            bubble.textContent = content;
+        } else {
+            bubble.textContent = content;
+        }
+        row.appendChild(bubble);
+        chatMessages.appendChild(row);
+        scrollChatToBottom();
+        return row;
+    }
+
+    function compactStreamMsg(msg) {
+        let s = (msg || '').trim();
+        if (s.length > 140) s = s.slice(0, 137) + '…';
+        return s;
+    }
+
+    function isAgentStreamLine(msg) {
+        if (!msg || !msg.trim()) return false;
+        if (msg.includes('[UI_RESULT_JSON]') || msg.includes('[UI]')) return false;
+        if (
+            msg.includes('>>> FINAL ANSWER <<<') ||
+            /\[agent\] RUN_COMPLETE/.test(msg) ||
+            /\[dag\] RUN_COMPLETE/.test(msg)
+        ) {
+            return false;
+        }
+        return (
+            /─── iter \d+ ───/.test(msg) ||
+            /\[memory\.|\[memory\.read\]|\[memory\.remember\]/.test(msg) ||
+            /\[perception\]/.test(msg) ||
+            /\[decision\]/.test(msg) ||
+            /\[action\]/.test(msg) ||
+            /\[attach\]|\[done\]|^\s+\[(?:open|done)\]/.test(msg) ||
+            /\[dag\].*\((planner|researcher|retriever|distiller|critic|coder|calculator|sandbox_executor|formatter|executor|wave)\)/.test(msg)
+        );
+    }
+
+    function appendChatStreamLog(msg) {
+        if (!agentRunActive || !chatStreamLogsEl || streamClosing) return;
+        if (!isAgentStreamLine(msg)) return;
+        const text = compactStreamMsg(msg);
+        const line = document.createElement('div');
+        line.className = 'chat-stream-line';
+        if (/─── iter/.test(text)) line.classList.add('iter');
+        else line.classList.add('role');
+        line.textContent = text;
+        chatStreamLogsEl.appendChild(line);
+        while (chatStreamLogsEl.children.length > MAX_STREAM_LINES) {
+            chatStreamLogsEl.removeChild(chatStreamLogsEl.firstChild);
+        }
+        chatStreamLogsEl.scrollTop = chatStreamLogsEl.scrollHeight;
+        scrollChatToBottom();
+    }
+
+    function showTypingIndicator() {
+        hideTypingIndicator();
+        if (!chatMessages) return;
+        hideChatWelcome();
+        streamClosing = false;
+        const row = document.createElement('div');
+        row.className = 'chat-row chat-row-assistant chat-stream';
+        row.id = 'chatStreamRow';
+        row.innerHTML =
+            '<div class="chat-avatar" aria-hidden="true">' + ASSISTANT_AVATAR_HTML + '</div>' +
+            '<div class="chat-bubble chat-stream-bubble" aria-live="polite" aria-label="Agent progress">' +
+            '<div class="chat-stream-head"><span class="chat-stream-pulse"></span><span>Working…</span></div>' +
+            '<div class="chat-stream-logs"></div>' +
+            '</div>';
+        chatMessages.appendChild(row);
+        chatTypingEl = row;
+        chatStreamLogsEl = row.querySelector('.chat-stream-logs');
+        scrollChatToBottom();
+    }
+
+    function closeStreamPanelSmooth(done) {
+        const row = chatTypingEl || document.getElementById('chatStreamRow');
+        if (!row) {
+            chatTypingEl = null;
+            chatStreamLogsEl = null;
+            if (typeof done === 'function') done();
+            return;
+        }
+        if (row.classList.contains('chat-stream-closing')) {
+            if (typeof done === 'function') setTimeout(done, STREAM_CLOSE_MS);
+            return;
+        }
+        streamClosing = true;
+        row.classList.add('chat-stream-closing');
+        setTimeout(function () {
+            hideTypingIndicator();
+            streamClosing = false;
+            if (typeof done === 'function') done();
+        }, STREAM_CLOSE_MS);
+    }
+
+    function hideTypingIndicator() {
+        if (chatTypingEl && chatTypingEl.parentNode) {
+            chatTypingEl.parentNode.removeChild(chatTypingEl);
+        }
+        chatTypingEl = null;
+        chatStreamLogsEl = null;
+        streamClosing = false;
+        const stale = document.getElementById('chatStreamRow');
+        if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+    }
+
+    function clearChatHistory() {
+        if (!chatMessages) return;
+        hideTypingIndicator();
+        chatMessages.innerHTML = '';
+        if (chatWelcome) {
+            chatMessages.appendChild(chatWelcome);
+            chatWelcome.style.display = '';
+        }
+    }
+
+    if (toggleTraceBtn && layoutMain) {
+        toggleTraceBtn.addEventListener('click', function () {
+            traceVisible = !traceVisible;
+            layoutMain.classList.toggle('trace-hidden', !traceVisible);
+            toggleTraceBtn.textContent = traceVisible ? 'Hide trace' : 'Show trace';
+        });
+    }
+
+    if (clearChatBtn) {
+        clearChatBtn.addEventListener('click', clearChatHistory);
+    }
+
+    function setDocumentsMode(on) {
+        if (!layoutMain) return;
+        layoutMain.classList.toggle('documents-mode', !!on);
+        if (on) layoutMain.classList.remove('graph-mode');
+    }
+
+    let dagNetwork = null;
+    let dagGraphPollTimer = null;
+    let dagGraphRefreshInFlight = false;
+    let dagRenderRetryTimer = null;
+    let dagFitDebounceTimer = null;
+    let dagFitInProgress = false;
+    let agentRunWatchdogTimer = null;
+    const AGENT_RUN_WATCHDOG_MS = 930000;
+    let activeDagSessionId = null;
+    let pendingDagGraphPayload = null;
+    let lastDagGraphPayload = null;
+    let dagNetworkSelectBound = false;
+
+    function visNetworkReady() {
+        return typeof vis !== 'undefined' && vis && typeof vis.Network === 'function';
+    }
+
+    function destroyDagNetwork() {
+        if (dagRenderRetryTimer) {
+            clearTimeout(dagRenderRetryTimer);
+            dagRenderRetryTimer = null;
+        }
+        if (!dagNetwork) return;
+        try {
+            dagNetwork.destroy();
+        } catch (err) { /* ignore */ }
+        dagNetwork = null;
+        dagNetworkSelectBound = false;
+    }
+
+    function clearAgentRunWatchdog() {
+        if (agentRunWatchdogTimer) {
+            clearTimeout(agentRunWatchdogTimer);
+            agentRunWatchdogTimer = null;
+        }
+    }
+
+    function startAgentRunWatchdog() {
+        clearAgentRunWatchdog();
+        agentRunWatchdogTimer = setTimeout(function () {
+            if (!agentRunActive) return;
+            appendLog('[UI] Run watchdog — clearing stuck UI state (no completion marker seen).');
+            resetRunButton();
+            setFormHint('Run may still be finishing on the server — check Live console.');
+        }, AGENT_RUN_WATCHDOG_MS);
+    }
+
+    let dagGraphResizeObs = null;
+
+    function dagGraphPanelVisible() {
+        return layoutMain && layoutMain.classList.contains('graph-mode');
+    }
+
+    function scheduleDagGraphFit(animate) {
+        if (!dagNetwork || !dagGraphPanelVisible()) return;
+        if (dagFitDebounceTimer) clearTimeout(dagFitDebounceTimer);
+        dagFitDebounceTimer = setTimeout(function () {
+            dagFitDebounceTimer = null;
+            if (!dagNetwork || !dagGraphPanelVisible()) return;
+            dagFitInProgress = true;
+            try {
+                dagNetwork.fit({
+                    padding: 56,
+                    animation: animate
+                        ? { duration: 280, easingFunction: 'easeInOutQuad' }
+                        : false,
+                });
+            } catch (err) { /* ignore */ }
+            setTimeout(function () {
+                dagFitInProgress = false;
+            }, animate ? 320 : 32);
+        }, 80);
+    }
+
+    function bindDagGraphResize() {
+        if (!dagGraphNetworkEl || dagGraphResizeObs || typeof ResizeObserver === 'undefined') return;
+        dagGraphResizeObs = new ResizeObserver(function () {
+            if (dagFitInProgress || !dagGraphPanelVisible()) return;
+            scheduleDagGraphFit(false);
+        });
+        dagGraphResizeObs.observe(dagGraphNetworkEl);
+    }
+
+    function setGraphMode(on) {
+        if (!layoutMain) return;
+        layoutMain.classList.toggle('graph-mode', !!on);
+        if (on) layoutMain.classList.remove('documents-mode');
+        if (!on) {
+            pendingDagGraphPayload = null;
+            stopDagGraphPolling();
+            return;
+        }
+        bindDagGraphResize();
+        if (pendingDagGraphPayload) {
+            const p = pendingDagGraphPayload;
+            pendingDagGraphPayload = null;
+            renderDagNetwork(p);
+        } else if (lastDagGraphPayload) {
+            renderDagNetwork(lastDagGraphPayload);
+        }
+    }
+
+    function dagEscapeHtml(s) {
+        return String(s || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function titleToPlain(title) {
+        if (!title) return '';
+        return String(title)
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .trim();
+    }
+
+    function renderDagGraphAside(payload) {
+        if (!payload) return;
+        if (dagGraphStats) {
+            const sc = (payload.stats && payload.stats.status_counts) || {};
+            const wall = (payload.stats && payload.stats.max_node_elapsed_s) || 0;
+            const parts = [
+                (payload.node_count || 0) + ' nodes',
+                (payload.edge_count || 0) + ' edges',
+            ];
+            ['complete', 'running', 'pending', 'failed'].forEach(function (k) {
+                if (sc[k]) parts.push(k + ': ' + sc[k]);
+            });
+            if (wall > 0) parts.push('max ' + wall + 's');
+            dagGraphStats.innerHTML = parts
+                .map(function (t) {
+                    return '<span>' + dagEscapeHtml(t) + '</span>';
+                })
+                .join('');
+        }
+        if (dagGraphMemoryList) {
+            const hits = payload.memory_hits || [];
+            if (!hits.length) {
+                dagGraphMemoryList.textContent =
+                    'No FAISS hits snapshotted for this session (runs before persistence may be empty).';
+            } else {
+                dagGraphMemoryList.innerHTML = hits
+                    .map(function (h, i) {
+                        const src = h.source ? ' · ' + dagEscapeHtml(h.source) : '';
+                        return (
+                            '<div class="mem-hit"><strong>' +
+                            dagEscapeHtml(h.descriptor || 'memory') +
+                            '</strong>' +
+                            src +
+                            '<div class="mt-0.5 text-zinc-500">' +
+                            dagEscapeHtml(h.preview || '') +
+                            '</div></div>'
+                        );
+                    })
+                    .join('');
+            }
+        }
+    }
+
+    function showDagNodeDetail(nodeId) {
+        if (!dagGraphNodeDetail || !lastDagGraphPayload) return;
+        const nodes = lastDagGraphPayload.nodes || [];
+        const n = nodes.find(function (x) {
+            return x.id === nodeId;
+        });
+        if (!n) {
+            dagGraphNodeDetail.textContent = 'Node not found: ' + nodeId;
+            return;
+        }
+        const lines = [
+            'ID: ' + n.id,
+            'Skill: ' + (n.skill || '?'),
+            'Status: ' + (n.status || 'pending'),
+        ];
+        if (n.elapsed_s != null) lines.push('Elapsed: ' + n.elapsed_s + 's');
+        const plain = titleToPlain(n.title);
+        if (plain) lines.push('', plain);
+        dagGraphNodeDetail.textContent = lines.join('\n');
+    }
+
+    function bindDagNetworkSelect() {
+        if (!dagNetwork || dagNetworkSelectBound || typeof dagNetwork.on !== 'function') return;
+        dagNetworkSelectBound = true;
+        dagNetwork.on('selectNode', function (params) {
+            if (!params.nodes || !params.nodes.length) return;
+            showDagNodeDetail(params.nodes[0]);
+        });
+        dagNetwork.on('deselectNode', function () {
+            if (dagGraphNodeDetail) {
+                dagGraphNodeDetail.textContent =
+                    'Click a node to inspect skill, status, and output preview.';
+            }
+        });
+    }
+
+    function openGraphView() {
+        activateTab('graph');
+        if (dagGraphPanel) {
+            dagGraphPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    function loadGraphView(sessionId) {
+        setDagGraphStatus('Loading graph…', false);
+        return loadDagSessions(sessionId || activeDagSessionId)
+            .then(function () {
+                const sid =
+                    (sessionId || '').trim() ||
+                    activeDagSessionId ||
+                    (dagGraphSessionSelect && dagGraphSessionSelect.value) ||
+                    '';
+                return refreshDagGraph(sid || undefined);
+            })
+            .catch(function (err) {
+                setDagGraphStatus(err && err.message ? err.message : 'Graph load failed', true);
+                return null;
+            });
+    }
+
+    function stopDagGraphPolling() {
+        if (dagGraphPollTimer) {
+            clearInterval(dagGraphPollTimer);
+            dagGraphPollTimer = null;
+        }
+    }
+
+    function startDagGraphPolling() {
+        stopDagGraphPolling();
+        if (!dagGraphAutoRefresh || !dagGraphAutoRefresh.checked) return;
+        if (!agentRunActive || !dagGraphPanelVisible()) return;
+        dagGraphPollTimer = setInterval(function () {
+            if (!agentRunActive || !dagGraphPanelVisible()) {
+                stopDagGraphPolling();
+                return;
+            }
+            if (dagGraphRefreshInFlight) return;
+            void refreshDagGraph(activeDagSessionId || undefined).catch(function () {
+                /* retry on next tick */
+            });
+        }, 3000);
+    }
+
+    function setDagGraphStatus(msg, isError) {
+        if (!dagGraphStatus) return;
+        dagGraphStatus.textContent = msg || '';
+        dagGraphStatus.classList.toggle('text-red-600', !!isError);
+        dagGraphStatus.classList.toggle('text-zinc-400', !isError);
+    }
+
+    async function loadDagSessions(selectId) {
+        if (!dagGraphSessionSelect) return [];
+        try {
+            const res = await fetch('/api/dag/sessions');
+            const body = await res.json();
+            if (!res.ok || body.status !== 'success') {
+                throw new Error((body && body.detail) || 'Failed to list sessions');
+            }
+            const sessions = body.sessions || [];
+            const prev = selectId || activeDagSessionId || dagGraphSessionSelect.value;
+            dagGraphSessionSelect.innerHTML = '';
+            if (!sessions.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '(no sessions)';
+                dagGraphSessionSelect.appendChild(opt);
+                return sessions;
+            }
+            sessions.forEach(function (s) {
+                const opt = document.createElement('option');
+                opt.value = s.session_id;
+                const label =
+                    (s.query_preview ? s.query_preview.slice(0, 48) : s.session_id.slice(0, 12)) +
+                    ' · ' +
+                    (s.node_count || 0) +
+                    ' nodes';
+                opt.textContent = label;
+                dagGraphSessionSelect.appendChild(opt);
+            });
+            const pick =
+                prev && sessions.some(function (s) { return s.session_id === prev; })
+                    ? prev
+                    : sessions[0].session_id;
+            dagGraphSessionSelect.value = pick;
+            activeDagSessionId = pick;
+            if (dagGraphSidebarMeta) {
+                dagGraphSidebarMeta.textContent = pick ? 'Session: ' + pick : 'No session loaded';
+            }
+            return sessions;
+        } catch (err) {
+            setDagGraphStatus(err.message, true);
+            return [];
+        }
+    }
+
+    function normalizeDagNodes(raw) {
+        return (raw || []).map(function (n) {
+            const copy = Object.assign({}, n);
+            copy.font = Object.assign(
+                { size: 15, face: 'Inter, system-ui, sans-serif', color: '#18181b', multi: true },
+                n.font || {}
+            );
+            if (!copy.widthConstraint) {
+                copy.widthConstraint = { minimum: 110, maximum: 260 };
+            }
+            if (!copy.margin) copy.margin = 12;
+            return copy;
+        });
+    }
+
+    function dagNetworkOptions() {
+        return {
+            nodes: {
+                shape: 'box',
+                font: { size: 15, face: 'Inter, system-ui, sans-serif', color: '#18181b', multi: true },
+                margin: 12,
+                widthConstraint: { minimum: 110, maximum: 260 },
+            },
+            edges: {
+                width: 2,
+                arrows: { to: { enabled: true, scaleFactor: 0.75 } },
+                smooth: { type: 'cubicBezier', roundness: 0.25 },
+            },
+            layout: {
+                hierarchical: {
+                    enabled: true,
+                    direction: 'UD',
+                    sortMethod: 'directed',
+                    nodeSpacing: 200,
+                    levelSeparation: 150,
+                    treeSpacing: 220,
+                    blockShifting: true,
+                    edgeMinimization: true,
+                    parentCentralization: true,
+                },
+            },
+            physics: { enabled: false },
+            interaction: {
+                hover: true,
+                tooltipDelay: 120,
+                navigationButtons: false,
+                zoomView: true,
+                dragView: true,
+            },
+        };
+    }
+
+    function renderDagNetwork(payload, attempt) {
+        if (!dagGraphNetworkEl) return;
+        if (!visNetworkReady()) {
+            setDagGraphStatus('Graph library not loaded (vis-network). Check network/CDN.', true);
+            return;
+        }
+        lastDagGraphPayload = payload;
+        renderDagGraphAside(payload);
+        if (!dagGraphPanelVisible()) {
+            pendingDagGraphPayload = payload;
+            setDagGraphStatus('Switch to the Graph tab to show the DAG in the main panel.', false);
+            return;
+        }
+        pendingDagGraphPayload = null;
+        const tryN = attempt || 0;
+        const w = dagGraphNetworkEl.offsetWidth;
+        const h = dagGraphNetworkEl.offsetHeight;
+        if ((w < 20 || h < 20) && tryN < 24) {
+            pendingDagGraphPayload = payload;
+            if (dagRenderRetryTimer) clearTimeout(dagRenderRetryTimer);
+            dagRenderRetryTimer = setTimeout(function () {
+                dagRenderRetryTimer = null;
+                renderDagNetwork(payload, tryN + 1);
+            }, 80);
+            return;
+        }
+        if (w < 20 || h < 20) {
+            setDagGraphStatus('Graph area has no size — click Refresh or widen the window.', true);
+            return;
+        }
+
+        const rawNodes = payload.nodes || [];
+        if (!rawNodes.length) {
+            destroyDagNetwork();
+            setDagGraphStatus(
+                'No nodes in session yet — wait for the planner to finish, then Refresh.',
+                false
+            );
+            return;
+        }
+
+        const nodes = new vis.DataSet(normalizeDagNodes(rawNodes));
+        const edges = new vis.DataSet(payload.edges || []);
+        const options = dagNetworkOptions();
+        const data = { nodes: nodes, edges: edges };
+
+        if (!dagNetwork) {
+            dagNetworkSelectBound = false;
+            dagNetwork = new vis.Network(dagGraphNetworkEl, data, options);
+            bindDagNetworkSelect();
+            if (typeof dagNetwork.on === 'function') {
+                const onDraw = function () {
+                    if (typeof dagNetwork.off === 'function') {
+                        dagNetwork.off('afterDrawing', onDraw);
+                    }
+                    scheduleDagGraphFit(false);
+                };
+                dagNetwork.on('afterDrawing', onDraw);
+            }
+        } else {
+            dagNetwork.setData(data);
+            dagNetwork.setOptions(options);
+            bindDagNetworkSelect();
+        }
+        bindDagGraphResize();
+        scheduleDagGraphFit(true);
+    }
+
+    async function refreshDagGraph(sessionId) {
+        if (dagGraphRefreshInFlight) return null;
+        const sid =
+            (sessionId || '').trim() ||
+            (dagGraphSessionSelect && dagGraphSessionSelect.value) ||
+            activeDagSessionId ||
+            '';
+        const url = sid ? '/api/dag/graph?session_id=' + encodeURIComponent(sid) : '/api/dag/graph';
+        dagGraphRefreshInFlight = true;
+        try {
+            if (dagGraphPanelVisible()) {
+                setDagGraphStatus('Loading graph…', false);
+            }
+            const res = await fetch(url);
+            const body = await res.json();
+            if (!res.ok || body.status !== 'success') {
+                throw new Error((body && body.detail) || 'Graph load failed');
+            }
+            activeDagSessionId = body.session_id || sid;
+            if (dagGraphSessionSelect && activeDagSessionId) {
+                dagGraphSessionSelect.value = activeDagSessionId;
+            }
+            if (dagGraphQueryPreview) {
+                const q = body.query || '';
+                dagGraphQueryPreview.textContent = q
+                    ? q.length > 200
+                        ? q.slice(0, 197) + '…'
+                        : q
+                    : '';
+            }
+            if (dagGraphSidebarMeta && activeDagSessionId) {
+                dagGraphSidebarMeta.textContent =
+                    'Session: ' +
+                    activeDagSessionId +
+                    ' · ' +
+                    (body.node_count || 0) +
+                    ' nodes';
+            }
+            lastDagGraphPayload = body;
+            renderDagGraphAside(body);
+            renderDagNetwork(body);
+            const memN = (body.memory_hits && body.memory_hits.length) || 0;
+            setDagGraphStatus(
+                (body.node_count || 0) +
+                    ' nodes · ' +
+                    (body.edge_count || 0) +
+                    ' edges' +
+                    (memN ? ' · ' + memN + ' memory hits' : '') +
+                    ' · ' +
+                    (body.layout_hint || 'hierarchical'),
+                false
+            );
+            return body;
+        } catch (err) {
+            setDagGraphStatus(err.message, true);
+            return null;
+        } finally {
+            dagGraphRefreshInFlight = false;
+        }
+    }
+
+    function consumeUiSessionPayload(payload) {
+        const plain = stripAnsi(payload);
+        const marker = '[UI_SESSION_JSON]';
+        const idx = plain.indexOf(marker);
+        if (idx < 0) return false;
+        const rest = plain.slice(idx + marker.length).trim();
+        const jsonText = extractJsonObjectAfterMarker(rest);
+        if (!jsonText) return false;
+        try {
+            const data = JSON.parse(jsonText);
+            if (data && data.session_id) {
+                activeDagSessionId = String(data.session_id);
+                if (dagGraphSidebarMeta) {
+                    dagGraphSidebarMeta.textContent = 'Session: ' + activeDagSessionId;
+                }
+                if (dagGraphSessionSelect) {
+                    const hasOpt = Array.from(dagGraphSessionSelect.options).some(function (o) {
+                        return o.value === activeDagSessionId;
+                    });
+                    if (!hasOpt) {
+                        const opt = document.createElement('option');
+                        opt.value = activeDagSessionId;
+                        opt.textContent = activeDagSessionId.slice(0, 16) + '… (live)';
+                        dagGraphSessionSelect.insertBefore(opt, dagGraphSessionSelect.firstChild);
+                    }
+                    dagGraphSessionSelect.value = activeDagSessionId;
+                }
+                if (dagGraphPanelVisible()) {
+                    void refreshDagGraph(activeDagSessionId).catch(function (err) {
+                        setDagGraphStatus(err && err.message ? err.message : 'Graph load failed', true);
+                    });
+                }
+                if (agentRunActive && dagGraphPanelVisible()) startDagGraphPolling();
+                return true;
+            }
+        } catch (err) {
+            console.warn('[concierge-ui] Bad UI_SESSION_JSON', err);
+        }
+        return false;
+    }
+
+    function formatBytes(n) {
+        if (n == null || isNaN(n)) return '—';
+        if (n < 1024) return n + ' B';
+        if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+        return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function escapeHtml(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function renderDocStats(stats) {
+        if (!docStatsGrid || !stats) return;
+        const cards = [
+            { label: 'Indexed docs', value: stats.indexed_documents, accent: 'accent' },
+            { label: 'Total chunks', value: stats.total_chunks, accent: 'accent' },
+            { label: 'FAISS vectors', value: stats.faiss_vectors, accent: 'accent-blue' },
+            { label: 'Sandbox files', value: stats.sandbox_files, accent: '' },
+            { label: 'Indexable', value: stats.indexable_files, accent: '' },
+            { label: 'Uploads', value: stats.upload_count, accent: 'accent-blue' },
+        ];
+        docStatsGrid.innerHTML = cards
+            .map(function (c) {
+                return (
+                    '<div class="doc-stat-card' +
+                    (c.accent ? ' ' + c.accent : '') +
+                    '"><div class="doc-stat-label">' +
+                    escapeHtml(c.label) +
+                    '</div><div class="doc-stat-value">' +
+                    escapeHtml(String(c.value)) +
+                    '</div></div>'
+                );
+            })
+            .join('');
+        if (docIndexedBadge) docIndexedBadge.textContent = String(stats.indexed_documents);
+    }
+
+    function filterDocuments(docs) {
+        const mode = docFilterSelect ? docFilterSelect.value : 'all';
+        const q = docSearchInput ? docSearchInput.value.trim().toLowerCase() : '';
+        return docs.filter(function (d) {
+            if (mode === 'indexed' && !d.indexed) return false;
+            if (mode === 'not_indexed' && d.indexed) return false;
+            if (mode === 'uploads' && d.folder !== 'uploads') return false;
+            if (q && !String(d.path || '').toLowerCase().includes(q)) return false;
+            return true;
+        });
+    }
+
+    function renderDocTable(documents) {
+        if (!docTableBody) return;
+        const rows = filterDocuments(documents || []);
+        if (docFilterCount) {
+            docFilterCount.textContent = rows.length + ' of ' + (documents ? documents.length : 0) + ' shown';
+        }
+        if (!rows.length) {
+            docTableBody.innerHTML =
+                '<tr><td colspan="6" class="text-center text-zinc-400 py-8">No documents match this filter.</td></tr>';
+            return;
+        }
+        docTableBody.innerHTML = rows
+            .map(function (d) {
+                const statusBadges = [];
+                if (d.indexed) statusBadges.push('<span class="doc-badge doc-badge-indexed">Indexed</span>');
+                else statusBadges.push('<span class="doc-badge doc-badge-pending">Not indexed</span>');
+                if (d.folder === 'uploads') statusBadges.push('<span class="doc-badge doc-badge-upload">Upload</span>');
+                if (!d.on_disk) statusBadges.push('<span class="doc-badge doc-badge-pending">Index only</span>');
+
+                const metaParts = [];
+                if (d.size_bytes != null) metaParts.push(formatBytes(d.size_bytes));
+                if (d.page_count != null) metaParts.push(d.page_count + ' pg');
+                if (d.modified_at) metaParts.push('mod ' + d.modified_at.slice(0, 10));
+                if (d.last_indexed_at) metaParts.push('idx ' + d.last_indexed_at.slice(0, 10));
+                if (d.citation_sample) metaParts.push('cite: ' + escapeHtml(d.citation_sample.slice(0, 48)));
+
+                const preview = d.preview
+                    ? '<div class="text-[10px] text-zinc-400 mt-0.5 max-w-[16rem] truncate" title="' +
+                      escapeHtml(d.preview) +
+                      '">' +
+                      escapeHtml(d.preview) +
+                      '</div>'
+                    : '';
+
+                const pathAttr = escapeHtml(d.path);
+                const actions = [];
+                if (d.indexable && d.on_disk) {
+                    if (!d.indexed) {
+                        actions.push(
+                            '<button type="button" class="doc-btn doc-btn-primary" data-doc-action="index" data-path="' +
+                                pathAttr +
+                                '">Index</button>'
+                        );
+                    } else {
+                        actions.push(
+                            '<button type="button" class="doc-btn" data-doc-action="reindex" data-path="' +
+                                pathAttr +
+                                '">Reindex</button>'
+                        );
+                        actions.push(
+                            '<button type="button" class="doc-btn doc-btn-danger" data-doc-action="delete" data-path="' +
+                                pathAttr +
+                                '">Delete index</button>'
+                        );
+                    }
+                } else if (d.indexed) {
+                    actions.push(
+                        '<button type="button" class="doc-btn doc-btn-danger" data-doc-action="delete" data-path="' +
+                            pathAttr +
+                            '">Delete index</button>'
+                    );
+                } else {
+                    actions.push('<span class="text-[10px] text-zinc-400">—</span>');
+                }
+
+                return (
+                    '<tr data-doc-path="' +
+                    pathAttr +
+                    '">' +
+                    '<td><div class="font-medium text-zinc-800">' +
+                    escapeHtml(d.name) +
+                    '</div><div class="text-[10px] text-zinc-500 font-mono break-all">' +
+                    escapeHtml(d.path) +
+                    '</div>' +
+                    preview +
+                    '</td>' +
+                    '<td>' +
+                    statusBadges.join(' ') +
+                    '</td>' +
+                    '<td class="tabular-nums font-medium">' +
+                    (d.chunk_count || 0) +
+                    '</td>' +
+                    '<td>' +
+                    escapeHtml(d.extraction || '—') +
+                    '</td>' +
+                    '<td class="text-[10px] leading-snug">' +
+                    (metaParts.length ? metaParts.join('<br>') : '—') +
+                    '</td>' +
+                    '<td><div class="doc-actions">' +
+                    actions.join('') +
+                    '</div></td></tr>'
+                );
+            })
+            .join('');
+    }
+
+    async function loadDocumentCatalog() {
+        if (docCatalogLoading) return;
+        docCatalogLoading = true;
+        if (docTableBody) {
+            docTableBody.innerHTML =
+                '<tr><td colspan="6" class="text-center text-zinc-400 py-6">Loading catalog…</td></tr>';
+        }
+        try {
+            const res = await fetch('/api/documents/catalog?_=' + Date.now());
+            const body = await res.json();
+            if (!res.ok || body.status === 'error') {
+                throw new Error(body.detail || 'HTTP ' + res.status);
+            }
+            docCatalogCache = body.documents || [];
+            renderDocStats(body.stats);
+            renderDocTable(docCatalogCache);
+        } catch (err) {
+            if (docTableBody) {
+                docTableBody.innerHTML =
+                    '<tr><td colspan="6" class="text-center text-red-600 py-6">Failed to load catalog: ' +
+                    escapeHtml(err.message) +
+                    '</td></tr>';
+            }
+        } finally {
+            docCatalogLoading = false;
+        }
+    }
+
+    function setDocUploadStatus(msg, isError) {
+        if (!docUploadStatus) return;
+        docUploadStatus.textContent = msg || '';
+        docUploadStatus.classList.toggle('text-red-600', !!isError);
+        docUploadStatus.classList.toggle('text-emerald-700', !isError);
+    }
+
+    async function uploadDocumentFiles(fileList) {
+        if (!fileList || !fileList.length) return;
+        setDocUploadStatus('Uploading ' + fileList.length + ' file(s)…');
+        let ok = 0;
+        let lastPath = '';
+        for (let i = 0; i < fileList.length; i++) {
+            const file = fileList[i];
+            const form = new FormData();
+            form.append('file', file);
+            try {
+                const res = await fetch('/api/documents/upload', { method: 'POST', body: form });
+                const body = await res.json();
+                if (!res.ok || body.status === 'error') {
+                    throw new Error(body.detail || 'Upload failed');
+                }
+                ok += 1;
+                lastPath = body.path || lastPath;
+            } catch (err) {
+                setDocUploadStatus('Upload failed for ' + file.name + ': ' + err.message, true);
+                await loadDocumentCatalog();
+                return;
+            }
+        }
+        setDocUploadStatus('Uploaded ' + ok + ' file(s). Index from the table or run bulk index.');
+        await loadDocumentCatalog();
+        if (lastPath && window.confirm('Index "' + lastPath + '" now (uses markdown sidecar when available)?')) {
+            await docIndexAction(lastPath, 'index', null);
+        }
+    }
+
+    async function docIndexAction(path, action, useVlm, triggerBtn) {
+        if (action === 'delete') {
+            if (!window.confirm('Remove all indexed chunks for\n' + path + '\n\nThe file on disk is kept.')) {
+                return;
+            }
+        }
+        if (_operation_busy()) return;
+
+        const row = triggerBtn ? triggerBtn.closest('tr') : null;
+        if (triggerBtn) triggerBtn.disabled = true;
+        if (row) row.classList.add('is-busy');
+        setIndexBusy(true);
+        try {
+            let res;
+            if (action === 'delete') {
+                res = await fetch('/api/documents/index?path=' + encodeURIComponent(path), { method: 'DELETE' });
+            } else if (action === 'reindex') {
+                res = await fetch('/api/documents/reindex', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: path, use_vlm: useVlm }),
+                });
+            } else {
+                res = await fetch('/api/documents/index', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: path, use_vlm: useVlm }),
+                });
+            }
+            const body = await res.json();
+            if (!res.ok || body.status === 'error') {
+                throw new Error(body.detail || 'Request failed');
+            }
+            const payload = body.result || body.indexed || body;
+            const chunks = payload.chunks_indexed;
+            const extraction = payload.extraction;
+            let statusMsg =
+                action === 'delete'
+                    ? 'Removed index for ' + path
+                    : (action === 'reindex' ? 'Reindexed' : 'Indexed') + ' ' + path;
+            if (action !== 'delete' && chunks != null) {
+                statusMsg += ' — ' + chunks + ' chunk' + (chunks === 1 ? '' : 's');
+                if (extraction) statusMsg += ' (' + extraction + ')';
+            }
+            setDocUploadStatus(statusMsg, false);
+            await loadDocumentCatalog();
+        } catch (err) {
+            setDocUploadStatus(action + ' failed: ' + err.message, true);
+        } finally {
+            setIndexBusy(false);
+            if (triggerBtn) triggerBtn.disabled = false;
+            if (row) row.classList.remove('is-busy');
+        }
+    }
+
+    async function runDocBulkIndex(directory) {
+        const dir = directory || 'research_papers';
+        const triggerBtn = dir === 'papers' ? docBulkIndexPapersBtn : docBulkIndexBtn;
+        if (!triggerBtn) return;
+        if (_operation_busy()) return;
+        setIndexBusy(true);
+        const label = dir === 'papers' ? 'papers/' : 'research_papers/';
+        setDocUploadStatus('Bulk indexing ' + label + '…');
+        try {
+            const res = await fetch('/api/documents/index-bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ directory: dir, use_vlm: false }),
+            });
+            const body = await res.json();
+            if (!res.ok || body.status === 'error') {
+                throw new Error(body.detail || 'Bulk index failed');
+            }
+            setDocUploadStatus(
+                'Indexed ' + (body.files_indexed || '?') + ' files, ' + (body.chunks_indexed || '?') + ' chunks' +
+                    (body.errors ? ' (' + body.errors + ' failed)' : '') + '.',
+                false
+            );
+            await loadDocumentCatalog();
+        } catch (err) {
+            setDocUploadStatus(err.message, true);
+        } finally {
+            setIndexBusy(false);
+        }
+    }
+
+    function activateTab(name) {
+        activeTabName = name;
+        TAB_ORDER.forEach(function (id) {
+            const selected = id === name;
+            const panel = panels[id];
+            if (panel) panel.classList.toggle('hidden', !selected);
+            if (tabButtons[id]) {
+                tabButtons[id].setAttribute('aria-selected', selected ? 'true' : 'false');
+                styleTabSelected(tabButtons[id], selected);
+            }
+        });
+        setDocumentsMode(name === 'documents');
+        setGraphMode(name === 'graph');
+        if (name !== 'graph') {
+            stopDagGraphPolling();
+        }
+        if (name === 'documents') {
+            loadDocumentCatalog();
+        }
+        if (name === 'graph') {
+            void loadGraphView(activeDagSessionId || undefined);
+        }
+        if (pendingResultMarkdown) {
+            paintResultPanel(pendingResultMarkdown);
+            pendingResultMarkdown = null;
+        }
+    }
+
+    function tabIndex(id) {
+        return TAB_ORDER.indexOf(id);
+    }
+
+    function focusTabByDelta(fromId, delta) {
+        const i = tabIndex(fromId);
+        if (i < 0) return;
+        const next = TAB_ORDER[(i + delta + TAB_ORDER.length) % TAB_ORDER.length];
+        activateTab(next);
+        const nextBtn = tabButtons[next];
+        if (nextBtn) nextBtn.focus();
+    }
+
+    tabOverviewBtn.addEventListener('click', function () {
+        activateTab('overview');
+    });
+    if (tabDocumentsBtn) {
+        tabDocumentsBtn.addEventListener('click', function () {
+            activateTab('documents');
+        });
+    }
+    tabTestCasesBtn.addEventListener('click', function () {
+        activateTab('testcases');
+    });
+    if (tabGraphBtn) {
+        tabGraphBtn.addEventListener('click', function () {
+            openGraphView();
+        });
+    }
+    tabRagBtn.addEventListener('click', function () {
+        activateTab('rag');
+    });
+
+    tabOverviewBtn.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+            e.preventDefault();
+            focusTabByDelta('overview', 1);
+        } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+            e.preventDefault();
+            focusTabByDelta('overview', -1);
+        }
+    });
+    if (tabDocumentsBtn) {
+        tabDocumentsBtn.addEventListener('keydown', function (e) {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+                e.preventDefault();
+                focusTabByDelta('documents', 1);
+            } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+                e.preventDefault();
+                focusTabByDelta('documents', -1);
+            }
+        });
+    }
+    tabTestCasesBtn.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+            e.preventDefault();
+            focusTabByDelta('testcases', -1);
+        } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+            e.preventDefault();
+            focusTabByDelta('testcases', 1);
+        }
+    });
+    if (tabGraphBtn) {
+        tabGraphBtn.addEventListener('keydown', function (e) {
+            if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+                e.preventDefault();
+                focusTabByDelta('graph', -1);
+            } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+                e.preventDefault();
+                focusTabByDelta('graph', 1);
+            }
+        });
+    }
+    tabRagBtn.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+            e.preventDefault();
+            focusTabByDelta('rag', -1);
+        } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+            e.preventDefault();
+            focusTabByDelta('rag', 1);
+        }
+    });
+
+    if (consoleCard && consoleCollapseBtn && consoleExpandBtn) {
+        function syncConsoleChromeButtons() {
+            const collapsed = consoleCard.classList.contains('console-collapsed');
+            consoleCollapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            consoleCollapseBtn.textContent = collapsed ? 'Show logs' : 'Hide logs';
+            consoleExpandBtn.disabled = collapsed;
+            consoleExpandBtn.classList.toggle('opacity-45', collapsed);
+            consoleExpandBtn.classList.toggle('cursor-not-allowed', collapsed);
+        }
+
+        consoleCollapseBtn.addEventListener('click', function () {
+            consoleCard.classList.toggle('console-collapsed');
+            if (consoleCard.classList.contains('console-collapsed')) {
+                consoleCard.classList.remove('console-expanded');
+                consoleExpandBtn.textContent = 'Taller';
+            }
+            syncConsoleChromeButtons();
+        });
+
+        consoleExpandBtn.addEventListener('click', function () {
+            if (consoleCard.classList.contains('console-collapsed')) return;
+            consoleCard.classList.toggle('console-expanded');
+            consoleExpandBtn.textContent = consoleCard.classList.contains('console-expanded')
+                ? 'Normal height'
+                : 'Taller';
+        });
+
+        syncConsoleChromeButtons();
+    }
+
+    const ansiUp = typeof AnsiUp !== 'undefined' ? new AnsiUp() : null;
+    if (ansiUp) {
+        ansiUp.use_classes = false;
+    }
+    if (typeof marked !== 'undefined' && typeof marked.setOptions === 'function') {
+        marked.setOptions({ breaks: true, gfm: true, headerIds: false, mangle: false });
+    }
+
+    let evtSource = null;
+    let reconnectTimer = null;
+
+    function setStreamState(ok, label) {
+        streamDot.className = 'h-2 w-2 shrink-0 rounded-full ' + (ok ? 'bg-emerald-500' : 'bg-amber-400') + (ok ? '' : ' animate-pulse');
+        streamLabel.textContent = label;
+    }
+
+    function stripAnsi(s) {
+        return String(s)
+            .replace(/\x1b\[[\d;]*m/g, '')
+            .replace(/\x1b\][\s\S]*?\x07/g, '')
+            .replace(/\x1b\][\s\S]*?\x1b\\/g, '');
+    }
+
+    function plainLogMessage(payload) {
+        const plain = stripAnsi(payload);
+        const match = plain.match(/^[^|\n]+\|\s+[A-Z]+\s+\|\s+([\s\S]*)$/);
+        let msg = match ? match[1] : plain;
+        msg = msg.replace(/^[\w.<>:]+:\w+:\d+\s+-\s+/, '');
+        return msg;
+    }
+
+    function shouldShowInConsole(msg) {
+        if (!msg || !msg.trim()) return false;
+        if (msg.includes('[UI_RESULT_JSON]') || msg.includes('[UI_SESSION_JSON]')) return false;
+        return true;
+    }
+
+    function escapeHtmlPlain(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    function hideResultPanel() {
+        if (!resultPanel || !resultBody) return;
+        pendingResultMarkdown = null;
+        resultPanel.classList.add('hidden');
+        resultBody.innerHTML = '';
+    }
+
+    function paintResultPanel(markdownText) {
+        closeStreamPanelSmooth(function () {
+            appendChatMessage('assistant', markdownText, { markdown: true, enterAnim: true });
+            if (resultBody) {
+                resultBody.innerHTML = markdownToHtml(markdownText);
+                enhanceRichContent(resultBody);
+            }
+        });
+    }
+
+    function showResultMarkdown(markdownText) {
+        if (!markdownText) return;
+        const normalized = String(markdownText).trim();
+        if (normalized && normalized === lastRenderedResult) return;
+        lastRenderedResult = normalized;
+        paintResultPanel(markdownText);
+    }
+
+    /**
+     * Extract UI_RESULT_JSON from one SSE record. Log lines are prefixed with
+     * ``time | LEVEL | message``, so we search for the marker (see stripAnsi).
+     */
+    function extractJsonObjectAfterMarker(text) {
+        const start = text.indexOf('{');
+        if (start < 0) return '';
+        let depth = 0;
+        let inString = false;
+        let escape = false;
+        for (let i = start; i < text.length; i++) {
+            const ch = text[i];
+            if (inString) {
+                if (escape) {
+                    escape = false;
+                } else if (ch === '\\') {
+                    escape = true;
+                } else if (ch === '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (ch === '"') {
+                inString = true;
+                continue;
+            }
+            if (ch === '{') depth++;
+            else if (ch === '}') {
+                depth--;
+                if (depth === 0) return text.slice(start, i + 1);
+            }
+        }
+        return text.slice(start).trim();
+    }
+
+    function consumeUiResultPayload(payload) {
+        const plain = stripAnsi(payload);
+        const marker = '[UI_RESULT_JSON]';
+        const idx = plain.indexOf(marker);
+        if (idx < 0) return false;
+        const rest = plain.slice(idx + marker.length).trim();
+        const jsonText = extractJsonObjectAfterMarker(rest);
+        if (!jsonText) return false;
+        try {
+            const data = JSON.parse(jsonText);
+            if (data && typeof data.text === 'string') {
+                showResultMarkdown(data.text);
+                return true;
+            }
+        } catch (err) {
+            console.warn('[concierge-ui] Bad UI_RESULT_JSON', err);
+        }
+        return false;
+    }
+
+    function consumeFinalAnswerPayload(payload) {
+        const msg = plainLogMessage(payload);
+        let marker = '>>> FINAL ANSWER <<<';
+        let idx = msg.indexOf(marker);
+        if (idx < 0) {
+            marker = '[final]';
+            idx = msg.indexOf(marker);
+        }
+        if (idx < 0) return false;
+        const rest = msg.slice(idx + marker.length).trim();
+        if (!rest) return false;
+        showResultMarkdown(rest);
+        return true;
+    }
+
+    function clearPlaceholderIfNeeded() {
+        const ph = logsDiv.querySelector('.log-placeholder');
+        if (ph) ph.remove();
+    }
+
+    function highlightPipeline(msg) {
+        const strip = document.getElementById('pipelineStrip');
+        if (!strip) return;
+        const steps = strip.querySelectorAll('.pipeline-step');
+        steps.forEach(function (s) { s.classList.remove('active'); });
+        if (/\[dag\].*\(planner\)/.test(msg)) steps[0]?.classList.add('active');
+        else if (/\[dag\].*\((researcher|retriever|distiller|coder|calculator|sandbox_executor|summariser)\)/.test(msg)) steps[1]?.classList.add('active');
+        else if (/\[dag\].*\(critic\)/.test(msg)) steps[2]?.classList.add('active');
+        else if (/\[dag\].*\(formatter\)|RUN_COMPLETE/.test(msg)) steps[3]?.classList.add('active');
+        else if (/\[memory\.|\[memory\.read\]|\[memory\.remember\]/.test(msg)) steps[0]?.classList.add('active');
+    }
+
+    function appendLog(rawText) {
+        if (!rawText) return;
+        clearPlaceholderIfNeeded();
+
+        const msg = plainLogMessage(rawText);
+        if (!shouldShowInConsole(msg)) return;
+        highlightPipeline(msg);
+
+        const line = document.createElement('div');
+        line.className = 'log-line';
+        if (msg.includes('─── iter')) {
+            line.classList.add('log-iter');
+        } else if (
+            /\[memory\.|\[perception\]|\[decision\]|\[action\]|\[attach\]|\[done\]|^\s+\[(?:open|done)\]|^\s+attach=/.test(msg)
+        ) {
+            line.classList.add('log-role');
+        } else if (/\[dag\]/.test(msg)) {
+            line.classList.add('log-role');
+        }
+        if (/index_document|index_directory|TOOL_CALL:\s*index_/i.test(msg)) {
+            line.classList.add('log-local');
+        }
+        if (/Heuristic|heuristic_after/i.test(msg)) {
+            line.classList.add('log-heuristic');
+        }
+        if (ansiUp && /\x1b\[[\d;]*m/.test(rawText)) {
+            line.innerHTML = ansiUp.ansi_to_html(rawText);
+        } else {
+            line.textContent = msg;
+        }
+        const plain = stripAnsi(rawText);
+        const levelMatch = plain.match(/\|\s+(DEBUG|INFO|SUCCESS|WARNING|ERROR)\s+\|/);
+        if (levelMatch) {
+            line.dataset.level = levelMatch[1].toLowerCase();
+        }
+        logsDiv.appendChild(line);
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+    }
+
+    const SEND_BTN_HTML =
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg> Send';
+
+    function resetRunButton() {
+        agentRunActive = false;
+        clearAgentRunWatchdog();
+        stopDagGraphPolling();
+        runBtn.innerHTML = SEND_BTN_HTML;
+        syncComposerControls();
+        setFormHint('');
+        closeStreamPanelSmooth();
+        setAgentStatus(false);
+        if (dagGraphPanelVisible() && activeDagSessionId) {
+            void refreshDagGraph(activeDagSessionId).catch(function () { /* ignore */ });
+        }
+    }
+
+    function maybeComplete(rawText) {
+        const text = stripAnsi(rawText);
+        if (
+            text.includes('[agent] RUN_COMPLETE') ||
+            text.includes('[dag] RUN_COMPLETE') ||
+            text.includes('reason=global_timeout') ||
+            text.includes('reason=run_failed') ||
+            text.includes('reason=error_abort') ||
+            text.includes('[agent] Run failed') ||
+            text.includes('Reached max iterations without completion') ||
+            text.includes('>>> FINAL ANSWER <<<')
+        ) {
+            resetRunButton();
+        }
+    }
+
+    function connectSSE() {
+        if (evtSource) {
+            evtSource.close();
+            evtSource = null;
+        }
+        setStreamState(false, 'Connecting…');
+        evtSource = new EventSource('/stream-logs');
+
+        evtSource.onopen = function () {
+            setStreamState(true, 'Connected — streaming');
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+        };
+
+        evtSource.onmessage = function (event) {
+            const payload = event.data || '';
+            if (!payload) return;
+            consumeUiSessionPayload(payload);
+            let gotResult = consumeUiResultPayload(payload);
+            if (!gotResult) gotResult = consumeFinalAnswerPayload(payload);
+            appendLog(payload);
+            if (!gotResult && agentRunActive) {
+                appendChatStreamLog(plainLogMessage(payload));
+            }
+            maybeComplete(payload);
+        };
+
+        evtSource.onerror = function () {
+            setStreamState(false, 'Reconnecting…');
+            evtSource.close();
+            evtSource = null;
+            reconnectTimer = setTimeout(connectSSE, 1500);
+        };
+    }
+
+    connectSSE();
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape' || !agentRunActive) return;
+        appendLog('[UI] Escape — unlocking UI (agent may still be running on the server).');
+        resetRunButton();
+    });
+
+    clearBtn.addEventListener('click', function () {
+        logsDiv.innerHTML = '<div class="log-placeholder text-sm">Trace cleared.</div>';
+    });
+
+    clearIntentBtn.addEventListener('click', function () {
+        queryInput.value = '';
+        autoResizeTextarea(queryInput);
+        setFormHint('');
+        queryInput.focus();
+    });
+
+    async function startAgentRun() {
+        if (agentRunActive) {
+            setFormHint('Agent is already running — wait for the current run to finish.');
+            return;
+        }
+        if (indexJobActive) {
+            setFormHint('Indexing is in progress — wait for it to finish before sending.');
+            appendLog('[UI] Cannot start agent while indexing is in progress.');
+            return;
+        }
+        const query = queryInput.value.trim();
+        if (!query) {
+            setFormHint('Type a message or pick a query from DAG Queries in the sidebar.');
+            queryInput.focus();
+            return;
+        }
+        appendChatMessage('user', query);
+        queryInput.value = '';
+        autoResizeTextarea(queryInput);
+        setFormHint('');
+        lastRenderedResult = '';
+        agentRunActive = true;
+        showTypingIndicator();
+        setAgentStatus(true);
+        syncComposerControls();
+
+        try {
+            const res = await fetch('/run-agent', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query }),
+            });
+            if (!res.ok) {
+                let msg = 'HTTP ' + res.status + ' ' + res.statusText;
+                if (res.status === 429) {
+                    try {
+                        const body = await res.json();
+                        if (body && body.detail) msg = String(body.detail);
+                    } catch (err) { /* ignore */ }
+                    appendLog('[UI] Busy — ' + msg);
+                    appendChatMessage('assistant', msg, { system: true });
+                } else {
+                    appendLog('Error starting agent: ' + msg);
+                    appendChatMessage('assistant', 'Could not start the agent: ' + msg, { system: true });
+                }
+                queryInput.value = query;
+                autoResizeTextarea(queryInput);
+                resetRunButton();
+                return;
+            }
+            startAgentRunWatchdog();
+        } catch (e) {
+            appendLog('Network error starting agent.');
+            appendChatMessage('assistant', 'Network error — could not reach the server.', { system: true });
+            queryInput.value = query;
+            autoResizeTextarea(queryInput);
+            resetRunButton();
+        }
+    }
+
+    runBtn.addEventListener('click', startAgentRun);
+
+    queryInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            startAgentRun();
+        }
+    });
+
+    queryInput.addEventListener('input', function () {
+        autoResizeTextarea(queryInput);
+        updateComposerHint();
+    });
+
+    autoResizeTextarea(queryInput);
+
+    // DAG demo queries: load query and auto-run
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('#panelTestCases .test-case-btn, #panelRag .rag-query-card, #panelRag .test-case-btn');
+        if (!btn) return;
+        const query = btn.getAttribute('data-query');
+        if (!query) return;
+        activateTab('overview');
+        queryInput.value = query;
+        autoResizeTextarea(queryInput);
+        updateComposerHint();
+        queryInput.focus();
+        startAgentRun();
+    });
+
+    if (openDocManagerBtn) {
+        openDocManagerBtn.addEventListener('click', function () {
+            activateTab('documents');
+        });
+    }
+    if (openGraphViewBtn) {
+        openGraphViewBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            openGraphView();
+        });
+    }
+    if (dagBackChatBtn) {
+        dagBackChatBtn.addEventListener('click', function () {
+            activateTab('overview');
+        });
+    }
+    if (dagGraphRefreshBtn) {
+        dagGraphRefreshBtn.addEventListener('click', function () {
+            destroyDagNetwork();
+            void loadGraphView(
+                (dagGraphSessionSelect && dagGraphSessionSelect.value) || activeDagSessionId
+            );
+        });
+    }
+    if (dagGraphFitBtn) {
+        dagGraphFitBtn.addEventListener('click', function () {
+            scheduleDagGraphFit(true);
+        });
+    }
+    if (dagGraphSessionSelect) {
+        dagGraphSessionSelect.addEventListener('change', function () {
+            activeDagSessionId = dagGraphSessionSelect.value || null;
+            destroyDagNetwork();
+            void refreshDagGraph(activeDagSessionId).catch(function (err) {
+                setDagGraphStatus(err && err.message ? err.message : 'Graph load failed', true);
+            });
+        });
+    }
+    if (dagGraphAutoRefresh) {
+        dagGraphAutoRefresh.addEventListener('change', function () {
+            if (dagGraphAutoRefresh.checked && agentRunActive) startDagGraphPolling();
+            else stopDagGraphPolling();
+        });
+    }
+    if (docBackChatBtn) {
+        docBackChatBtn.addEventListener('click', function () {
+            activateTab('overview');
+        });
+    }
+    if (docRefreshBtn) {
+        docRefreshBtn.addEventListener('click', loadDocumentCatalog);
+    }
+    if (docBulkIndexBtn) {
+        docBulkIndexBtn.addEventListener('click', function () {
+            runDocBulkIndex('research_papers');
+        });
+    }
+    if (docBulkIndexPapersBtn) {
+        docBulkIndexPapersBtn.addEventListener('click', function () {
+            runDocBulkIndex('papers');
+        });
+    }
+    if (docFilterSelect) {
+        docFilterSelect.addEventListener('change', function () {
+            renderDocTable(docCatalogCache);
+        });
+    }
+    if (docSearchInput) {
+        docSearchInput.addEventListener('input', function () {
+            renderDocTable(docCatalogCache);
+        });
+    }
+    if (docUploadPickBtn && docUploadInput) {
+        docUploadPickBtn.addEventListener('click', function () {
+            docUploadInput.click();
+        });
+        docUploadInput.addEventListener('change', function () {
+            uploadDocumentFiles(docUploadInput.files);
+            docUploadInput.value = '';
+        });
+    }
+    if (docUploadZone) {
+        docUploadZone.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            docUploadZone.classList.add('dragover');
+        });
+        docUploadZone.addEventListener('dragleave', function () {
+            docUploadZone.classList.remove('dragover');
+        });
+        docUploadZone.addEventListener('drop', function (e) {
+            e.preventDefault();
+            docUploadZone.classList.remove('dragover');
+            if (e.dataTransfer && e.dataTransfer.files) {
+                uploadDocumentFiles(e.dataTransfer.files);
+            }
+        });
+    }
+    if (docTableBody) {
+        docTableBody.addEventListener('click', function (e) {
+            const btn = e.target.closest('[data-doc-action]');
+            if (!btn) return;
+            const path = btn.getAttribute('data-path');
+            const action = btn.getAttribute('data-doc-action');
+            if (!path || !action) return;
+            docIndexAction(path, action, null, btn);
+        });
+    }
+
+    const resetStateBtn = document.getElementById('resetStateBtn');
+
+    if (resetStateBtn) {
+        resetStateBtn.addEventListener('click', async function () {
+            if (_operation_busy()) {
+                appendLog('[UI] Cannot clear state while an agent run or index job is active.');
+                return;
+            }
+            if (!window.confirm('Clear all durable state in state/? This cannot be undone.')) {
+                return;
+            }
+            const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+            appendLog(now + ' | WARNING  | [UI] Clearing state directory (state/)...');
+            
+            try {
+                const res = await fetch('/reset-state', { method: 'POST' });
+                let body = {};
+                try {
+                    body = await res.json();
+                } catch (parseErr) { /* ignore */ }
+                if (res.ok) {
+                    appendLog(now + ' | SUCCESS  | [UI] ' + (body.detail || 'Durable state cleared successfully!'));
+                    appendChatMessage('assistant', 'Durable state cleared (memory.json + FAISS index).', { system: true });
+                    if (typeof loadDocumentCatalog === 'function') loadDocumentCatalog();
+                } else {
+                    appendLog(now + ' | ERROR    | [UI] Reset failed: ' + (body.detail || ('HTTP ' + res.status)));
+                }
+            } catch (err) {
+                appendLog(now + ' | ERROR    | [UI] Network error during reset: ' + err.message);
+            }
+        });
+    }
+
+    activateTab('overview');
+    loadDocumentCatalog();
+
+    let customQueriesCache = [];
+
+    function ragKindClass(kind) {
+        if (kind === 'semantic') return 'rag-kind-semantic';
+        if (kind === 'cross-doc') return 'rag-kind-cross-doc';
+        return 'rag-kind-keyword';
+    }
+
+    function ragKindLabel(kind) {
+        if (kind === 'semantic') return 'Semantic';
+        if (kind === 'cross-doc') return 'Cross-doc';
+        return 'Keyword';
+    }
+
+    function renderCustomQueryButton(q, opts) {
+        opts = opts || {};
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = (opts.compact ? 'rag-welcome-chip' : 'rag-query-card outline-none w-full');
+        btn.setAttribute('data-query', q.query);
+        if (opts.compact) {
+            btn.textContent = q.label;
+            btn.title = q.query;
+        } else {
+            const title = q.title || q.label;
+            const note = q.semantic_note || '';
+            btn.innerHTML =
+                '<div class="case-header">' +
+                '<span class="case-badge rag">' +
+                escapeHtml(q.label) +
+                '</span>' +
+                '<div class="min-w-0 flex-1">' +
+                '<div class="flex flex-wrap items-center gap-1.5">' +
+                '<span class="block text-xs font-bold text-slate-900">' +
+                escapeHtml(title) +
+                '</span>' +
+                '<span class="rag-kind-badge ' +
+                ragKindClass(q.kind) +
+                '">' +
+                escapeHtml(ragKindLabel(q.kind)) +
+                '</span>' +
+                '</div>' +
+                '<span class="block mt-1 text-[10px] leading-snug text-slate-500">' +
+                escapeHtml(note.slice(0, 120)) +
+                (note.length > 120 ? '…' : '') +
+                '</span>' +
+                '<span class="mt-1 block text-[9px] text-violet-700/80">Requires index · fails on empty memory</span>' +
+                '</div></div>';
+        }
+        btn.addEventListener('click', function () {
+            activateTab('overview');
+            queryInput.value = q.query;
+            autoResizeTextarea(queryInput);
+            updateComposerHint();
+            queryInput.focus();
+            if (opts.autoRun) startAgentRun();
+        });
+        return btn;
+    }
+
+    function dagPartLabel(part) {
+        const labels = {
+            1: 'Base',
+            2: 'Parallel',
+            3: 'Critic',
+            4: 'Coder',
+            5: 'Calculator',
+        };
+        return labels[part] || 'Group ' + part;
+    }
+
+    function loadDagQueryIntoComposer(query, autoRun) {
+        if (!query) return;
+        activateTab('overview');
+        queryInput.value = query;
+        autoResizeTextarea(queryInput);
+        updateComposerHint();
+        queryInput.focus();
+        if (autoRun) startAgentRun();
+    }
+
+    function renderDagDesignQueries(designRows, queriesById) {
+        const host = document.getElementById('dagDesignQueries');
+        if (!host) return;
+        host.innerHTML = '';
+        if (!designRows || !designRows.length) return;
+
+        designRows.forEach(function (dq) {
+            const block = document.createElement('div');
+            block.className = 'dag-design-block';
+            const reqs = (dq.requirements || [])
+                .map(function (r) {
+                    return '<li>' + escapeHtml(r) + '</li>';
+                })
+                .join('');
+            const tools =
+                dq.tools && dq.tools.length
+                    ? '<span class="case-tool-hint">Tools: ' +
+                      escapeHtml(dq.tools.join(', ')) +
+                      '</span>'
+                    : '';
+            const verify = dq.verify
+                ? '<p class="dag-design-verify"><strong>Verify:</strong> ' +
+                  escapeHtml(dq.verify) +
+                  '</p>'
+                : '';
+            const also =
+                dq.also_see
+                    ? '<p class="dag-design-verify">' + escapeHtml(dq.also_see) + '</p>'
+                    : '';
+            block.innerHTML =
+                '<h4>' +
+                escapeHtml(dq.title || dq.id || '') +
+                '</h4>' +
+                (reqs ? '<ul>' + reqs + '</ul>' : '') +
+                tools +
+                verify +
+                also +
+                '<div class="dag-design-actions"></div>';
+            const actions = block.querySelector('.dag-design-actions');
+
+            if (dq.kind === 'parallel' && dq.query_id) {
+                const qrow = queriesById[dq.query_id];
+                if (qrow && actions) {
+                    const run = document.createElement('button');
+                    run.type = 'button';
+                    run.className = 'dag-design-run primary';
+                    run.textContent = 'Run ' + dq.query_id;
+                    run.addEventListener('click', function () {
+                        loadDagQueryIntoComposer(qrow.query, true);
+                    });
+                    actions.appendChild(run);
+                }
+            }
+            if (dq.kind === 'critic' && dq.query_ids) {
+                dq.query_ids.forEach(function (qid, idx) {
+                    const qrow = queriesById[qid];
+                    if (!qrow || !actions) return;
+                    const run = document.createElement('button');
+                    run.type = 'button';
+                    run.className =
+                        'dag-design-run ' + (idx === 0 ? 'critic-pass' : 'critic-fail');
+                    run.textContent =
+                        idx === 0 ? 'Run ' + qid + ' (pass)' : 'Run ' + qid + ' (fail → recovery)';
+                    run.addEventListener('click', function () {
+                        loadDagQueryIntoComposer(qrow.query, true);
+                    });
+                    actions.appendChild(run);
+                });
+            }
+            host.appendChild(block);
+        });
+    }
+
+    function renderDagQueryButton(q) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className =
+            'test-case-btn test-case-card border border-slate-200 bg-white hover:bg-slate-50/80 rounded-xl p-3 text-left focus:ring-2 focus:ring-zinc-900/10 outline-none w-full';
+        btn.setAttribute('data-query', q.query);
+        const bound = q.wall_clock_sec ? q.wall_clock_sec + 's bound' : '';
+        let badgeClass = 'case-badge';
+        if (q.featured === 'parallel_design' || q.verify_parallel_max) {
+            badgeClass += ' parallel';
+        } else if (q.featured === 'critic_design' || q.critic_expect) {
+            badgeClass += ' critic';
+        }
+        const uiHint = q.ui_hint
+            ? '<span class="case-run-hint">' + escapeHtml(q.ui_hint) + '</span>'
+            : '';
+        const verifyHint = q.verify_hint
+            ? '<span class="case-run-hint text-emerald-800/90">' +
+              escapeHtml(q.verify_hint) +
+              '</span>'
+            : '';
+        const criticTag = q.critic_expect
+            ? '<span class="case-tool-hint">' +
+              escapeHtml(
+                  q.critic_expect === 'pass'
+                      ? 'Expect: critic pass'
+                      : 'Expect: fail + recovery planner'
+              ) +
+              '</span>'
+            : '';
+        const parallelTag =
+            q.parallel_researchers >= 3
+                ? '<span class="case-tool-hint">≥' +
+                  q.parallel_researchers +
+                  ' parallel researchers</span>'
+                : '';
+        btn.innerHTML =
+            '<div class="case-header">' +
+            '<span class="' +
+            badgeClass +
+            '">' +
+            escapeHtml(String(q.id || '')) +
+            '</span>' +
+            '<div><span class="block text-xs font-bold text-slate-900">' +
+            escapeHtml(q.title || q.id || '') +
+            '</span>' +
+            '<span class="case-subtitle">' +
+            escapeHtml(dagPartLabel(q.part)) +
+            (bound ? ' · ' + escapeHtml(bound) : '') +
+            '</span>' +
+            uiHint +
+            verifyHint +
+            criticTag +
+            parallelTag +
+            '</div></div>';
+        return btn;
+    }
+
+    async function loadDagQueries() {
+        const list = document.getElementById('testCaseList');
+        const tabBadge = document.querySelector('#tabTestCasesBtn .tabular-nums');
+        try {
+            const res = await fetch('/api/queries/dag');
+            const body = await res.json();
+            if (!res.ok || !body.queries) throw new Error('load failed');
+            if (tabBadge && body.query_count) {
+                tabBadge.textContent = String(body.query_count);
+            }
+            const queriesById = {};
+            body.queries.forEach(function (q) {
+                queriesById[q.id] = q;
+            });
+            renderDagDesignQueries(body.design_queries || [], queriesById);
+            const byPart = {};
+            body.queries.forEach(function (q) {
+                const p = q.part || 0;
+                if (!byPart[p]) byPart[p] = [];
+                byPart[p].push(q);
+            });
+            if (list) {
+                list.innerHTML = '';
+                Object.keys(byPart)
+                    .sort(function (a, b) { return Number(a) - Number(b); })
+                    .forEach(function (part) {
+                        const header = document.createElement('p');
+                        header.className = 'text-[10px] font-bold uppercase tracking-wide text-zinc-400 mt-2 mb-1 px-0.5';
+                        header.textContent = dagPartLabel(Number(part));
+                        list.appendChild(header);
+                        byPart[part].forEach(function (q) {
+                            list.appendChild(renderDagQueryButton(q));
+                        });
+                    });
+            }
+        } catch (err) {
+            const designHost = document.getElementById('dagDesignQueries');
+            if (designHost) designHost.innerHTML = '';
+            if (list) {
+                list.innerHTML =
+                    '<p class="text-xs text-red-600 py-4 text-center">Failed to load DAG queries.</p>';
+            }
+        }
+    }
+    async function loadCustomQueries() {
+        const list = document.getElementById('ragQueryList');
+        const reqText = document.getElementById('ragRequirementsText');
+        const tabBadge = document.querySelector('#tabRagBtn .tabular-nums');
+        try {
+            const res = await fetch('/api/queries/custom');
+            const body = await res.json();
+            if (!res.ok || !body.queries) throw new Error('load failed');
+            if (tabBadge) tabBadge.textContent = String(body.queries.length);
+            if (reqText && body.requirements) {
+                const r = body.requirements;
+                reqText.textContent =
+                    (body.corpus_description || 'Custom corpus eval') +
+                    ' · ' + r.semantic_count + ' semantic · min ' + r.semantic_recall_min + ' semantic recall';
+            }
+            if (list) {
+                list.innerHTML = '';
+                customQueriesCache = body.queries;
+                body.queries.forEach(function (q) {
+                    list.appendChild(renderCustomQueryButton(q));
+                });
+            }
+        } catch (err) {
+            if (list) {
+                list.innerHTML =
+                    '<p class="text-xs text-red-600 py-4 text-center">Failed to load RAG queries.</p>';
+            }
+        }
+    }
+
+    loadDagQueries();
+    loadCustomQueries();
+})();
+</script>
+</body>
+</html>

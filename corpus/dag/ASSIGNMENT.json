@@ -1,0 +1,150 @@
+{
+  "description": "Built-in DAG demo queries — base (hello,A,I,J,K) plus parallel, critic, coder, calculator.",
+  "session_root": "state/sessions",
+  "log_dir": "logs/dag",
+  "worked_query_ids": ["hello", "A", "I", "J", "K"],
+  "design_queries": [
+    {
+      "id": "parallel_design",
+      "kind": "parallel",
+      "title": "Parallel fan-out (≥3 independent sub-tasks)",
+      "query_id": "P",
+      "requirements": [
+        "Planner emits at least three researcher nodes with no edges between them (one concurrent wave).",
+        "Executor runs the wave with asyncio.gather — wall-clock for that layer should be ≈ max(branch elapsed), not the sum."
+      ],
+      "verify": "After run: uv run python scripts/dag/analyze_session_timing.py <session_id> — expect parallel_confirmed=true.",
+      "also_see": "Base query I (London / Paris / Berlin) uses the same parallel shape."
+    },
+    {
+      "id": "critic_design",
+      "kind": "critic",
+      "title": "Critic verdict (tool-grounded pass + fail with recovery)",
+      "query_ids": ["C_pass", "C_fail"],
+      "requirements": [
+        "Property verified by critic tool validate_json_keys (keys author, title, year) — available in cognitive_dag/mcp_server.py.",
+        "Run C_pass once: critic passes → formatter only.",
+        "Run C_fail once: critic fails → recovery planner node splices in graph → corrected answer with year added."
+      ],
+      "verify": "Inspect session graph (Graph tab): C_fail session must show a recovery planner node after critic failure.",
+      "tools": ["validate_json_keys", "count_syllables"]
+    }
+  ],
+  "queries": [
+    {
+      "id": "hello",
+      "part": 1,
+      "label": "Hello",
+      "title": "Minimum DAG",
+      "query": "Say hello.",
+      "wall_clock_sec": 15,
+      "expected_nodes_min": 2,
+      "expected_skills": ["planner", "formatter"],
+      "notes": "Planner emits Formatter as sole successor; wall-clock under 3s."
+    },
+    {
+      "id": "A",
+      "part": 1,
+      "label": "A",
+      "title": "Shannon Wikipedia",
+      "query": "Fetch https://en.wikipedia.org/wiki/Claude_Shannon and tell me his birth date, death date, and three key contributions to information theory.",
+      "wall_clock_sec": 180,
+      "expected_nodes_min": 4,
+      "expected_skills": ["planner", "researcher", "distiller", "formatter"],
+      "expected_auto": ["critic"],
+      "notes": "Researcher fetch_url; distiller extracts fields; critic auto-spliced; formatter terminal."
+    },
+    {
+      "id": "I",
+      "part": 1,
+      "label": "I",
+      "title": "Populations parallel fan-out (canonical)",
+      "query": "Find the populations of London, Paris, Berlin and tell me which two are closest in size.",
+      "wall_clock_sec": 120,
+      "expected_nodes_min": 7,
+      "expected_skills": ["planner", "researcher", "coder", "formatter", "sandbox_executor"],
+      "parallel_researchers": 3,
+      "notes": "Three parallel researchers; coder; formatter diamond with auto sandbox_executor."
+    },
+    {
+      "id": "J",
+      "part": 1,
+      "label": "J",
+      "title": "Graceful failure",
+      "query": "Read /nonexistent/path.txt and tell me what's in it.",
+      "wall_clock_sec": 30,
+      "expected_nodes_min": 2,
+      "expected_skills": ["planner", "formatter"],
+      "notes": "Planner emits formatter directly with failure note; no tool dispatch."
+    },
+    {
+      "id": "K",
+      "part": 1,
+      "label": "K",
+      "title": "Resumable execution",
+      "query": "For Lagos, Cairo, and Kinshasa, find current populations and growth rates and tell me which is growing fastest.",
+      "wall_clock_sec": 180,
+      "expected_nodes_min": 7,
+      "expected_skills": ["planner", "researcher", "coder", "formatter", "sandbox_executor"],
+      "parallel_researchers": 3,
+      "resume_session_example": "dag_K_resumed_v2",
+      "notes": "Kill mid parallel-researcher layer; resume resets running→pending."
+    },
+    {
+      "id": "P",
+      "part": 2,
+      "label": "P",
+      "title": "Custom parallel fan-out (three capitals)",
+      "featured": "parallel_design",
+      "query": "Find the current population of Tokyo, Mumbai, and São Paulo and tell me which city has the largest population.",
+      "wall_clock_sec": 120,
+      "expected_nodes_min": 6,
+      "parallel_researchers": 3,
+      "verify_parallel_max": true,
+      "ui_hint": "Parallel track: three independent population lookups in one concurrent researcher wave.",
+      "verify_hint": "analyze_session_timing.py → parallel_confirmed=true; layer wall ≈ max(branch), not sum."
+    },
+    {
+      "id": "C_pass",
+      "part": 3,
+      "label": "C_pass",
+      "title": "Critic pass — JSON keys verified by tool",
+      "featured": "critic_design",
+      "query": "Validate this JSON object exactly as given (do not omit fields): {\"author\":\"Ada Lovelace\",\"title\":\"Notes\",\"year\":1843}. The distiller must output this JSON verbatim. The critic must verify keys author, title, year exist using validate_json_keys.",
+      "wall_clock_sec": 60,
+      "expected_skills": ["planner", "distiller", "critic", "formatter"],
+      "critic_expect": "pass",
+      "ui_hint": "Run first for critic pass: validate_json_keys sees author, title, year.",
+      "verify_hint": "Graph: distiller → critic (pass) → formatter; no recovery planner."
+    },
+    {
+      "id": "C_fail",
+      "part": 3,
+      "label": "C_fail",
+      "title": "Critic fail — missing key triggers recovery",
+      "featured": "critic_design",
+      "query": "Validate this JSON object exactly as given (do not add fields): {\"author\":\"Ada Lovelace\",\"title\":\"Notes\"}. The distiller must output this JSON verbatim. The critic must verify keys author, title, year exist using validate_json_keys. On fail, replan with year added.",
+      "wall_clock_sec": 90,
+      "expected_skills": ["planner", "distiller", "critic", "formatter"],
+      "critic_expect": "fail_then_recovery",
+      "ui_hint": "Run second for critic fail: missing year → recovery planner splices corrected JSON.",
+      "verify_hint": "Graph: critic fail → recovery planner node → formatter with year:1843."
+    },
+    {
+      "id": "M",
+      "part": 4,
+      "title": "Coder + SandboxExecutor computation",
+      "query": "What is the exact integer value of (17 * 23 - 4) ** 2 + 1000? Use coder to compute; sandbox must verify.",
+      "wall_clock_sec": 60,
+      "expected_skills": ["planner", "coder", "formatter", "sandbox_executor"]
+    },
+    {
+      "id": "CALC",
+      "part": 5,
+      "title": "Calculator skill (new)",
+      "query": "What is the exact numeric value of (987654321 ** 0) + ((17 * 23 + 41) / 7)? Use the calculator skill.",
+      "wall_clock_sec": 45,
+      "expected_skills": ["planner", "calculator", "formatter"]
+    }
+  ]
+}

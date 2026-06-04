@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none" role="img" aria-label="Cognitive DAG Agent">
+  <defs>
+    <linearGradient id="bg" x1="24" y1="16" x2="104" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#27272a"/>
+      <stop offset="1" stop-color="#18181b"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <rect x="1" y="1" width="126" height="126" rx="27" stroke="#3f3f46" stroke-width="1" opacity="0.55"/>
+  <!-- Parallel fan-out (three branches) -->
+  <path stroke="#fafafa" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.38" d="M38 40 64 58M90 40 64 58"/>
+  <path stroke="#fafafa" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" d="M64 66 64 88"/>
+  <!-- Branch nodes -->
+  <circle cx="38" cy="36" r="9" fill="#fafafa" opacity="0.72"/>
+  <circle cx="90" cy="36" r="9" fill="#fafafa" opacity="0.72"/>
+  <circle cx="64" cy="28" r="9" fill="#fafafa"/>
+  <!-- Merge + terminal -->
+  <circle cx="64" cy="58" r="10" fill="#fafafa" opacity="0.88"/>
+  <circle cx="64" cy="94" r="11" fill="#fafafa"/>
+  <!-- Active recall node -->
+  <circle cx="64" cy="58" r="4" fill="#18181b"/>
+</svg>

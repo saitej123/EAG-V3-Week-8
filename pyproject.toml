@@ -1,0 +1,39 @@
+[project]
+name = "cognitive-dag-agent"
+version = "0.1.0"
+description = "Cognitive DAG agent with FAISS vector memory, MCP tools, and parallel skill orchestration"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "networkx",
+    "pyyaml",
+    "faiss-cpu",
+    "crawl4ai",
+    "duckduckgo-search",
+    "fastapi",
+    "google-genai",
+    "httpx",
+    "jinja2",
+    "loguru",
+    "mcp",
+    "pymupdf",
+    "pydantic",
+    "python-dotenv",
+    "python-multipart",
+    "sse-starlette",
+    "tavily-python",
+    "uvicorn",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cognitive_dag*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

@@ -1,0 +1,131 @@
+# DAG Agent Assignment — Results
+
+This document maps each assignment part to **query ids**, **log paths**, and **verification commands**.
+
+## Architecture (intact)
+
+| Rule | Implementation |
+|------|----------------|
+| Skills = yaml + prompt | `agent_config.yaml` + `prompts/*.md` |
+| Planner emits graph | `extends_graph: true` on planner skill |
+| Executor runs ready nodes in parallel | `asyncio.gather` in `cognitive_dag/flow.py` |
+| Critic between flagged producer and successor | Auto-splice on `distiller` (`critic: true`) |
+| Recovery on critic fail | `_handle_critic` → recovery planner via `classify_failure` |
+| Coder → sandbox_executor | `internal_successors: [sandbox_executor]` |
+| New skill = yaml edit only | **calculator** — no Executor changes |
+
+Run architecture tests:
+
+```bash
+uv run pytest tests/test_dag_flow.py tests/test_recovery.py tests/test_worked_queries.py tests/test_dag_mcp_tools.py tests/test_assignment_spec.py -q
+```
+
+## Run all assignment queries
+
+```bash
+uv run python scripts/dag/run_eval.py --fresh
+```
+
+Logs land in `logs/dag/<query_id>.log` with a combined `logs/dag/summary.json`.
+
+Parallel timing proof (after query **P** or **I**):
+
+```bash
+uv run python scripts/dag/analyze_session_timing.py dag_P_<timestamp> --json
+```
+
+---
+
+## Part 1 — Base queries (hello, A, I, J, K)
+
+Sanity check plus S7 carryover (no behavioural regression) plus resume. **Traces:** `state/sessions/<session_id>/` (`query.txt`, `graph.json`, `nodes/*.json`). **Logs:** `logs/dag/<id>.log`.
+
+| Id | Role | Expected DAG | Wall bound | Log |
+|----|------|--------------|------------|-----|
+| **hello** | Minimum DAG | 2 nodes: planner → formatter only | 15s (lecture: &lt;3s) | `hello.log` |
+| **A** | S7 Shannon Wikipedia | 4+ nodes: researcher → distiller → critic (auto) → formatter | 180s | `A.log` |
+| **I** | Parallel fan-out (canonical) | 7 nodes: 3× researcher ∥ → coder → formatter ∥ sandbox_executor | 120s (lecture ~62s) | `I.log` |
+| **J** | Graceful failure | 2 nodes: planner → formatter (fail-fast; no tools) | 30s | `J.log` |
+| **K** | Resumable execution | Same shape as **I**; kill mid parallel researchers, then resume | 180s | `K.log` |
+
+**Query I** (populations) is the Session 8 headline: three researchers finish on the same `asyncio.gather` barrier; token use is scoped per node (contrast with S7 iteration history). After a run:
+
+```bash
+uv run python scripts/dag/analyze_session_timing.py dag_I_<timestamp> --json
+```
+
+**Query K** (resume): run until parallel researchers are in flight, then `kill -9` the process. Resume (query read from `query.txt`):
+
+```bash
+uv run python scripts/dag/run_query.py --resume dag_K_<timestamp>
+# or: uv run python scripts/dag/run_eval.py --ids K --resume  # same session id, no --fresh
+```
+
+Expected DAG shapes (structural, no live LLM): `tests/test_worked_queries.py` · `corpus/dag/ASSIGNMENT.json` (`worked_query_ids`: hello–K).
+
+### Optional: Gateway V8 (separate package)
+
+`llm_gatewayV8` is **not** in this repo. DAG mode uses the **Gemini SDK** by default. To route through V8 (agent/session labels, `/v1/cost/by_agent`, pinned providers):
+
+```bash
+# In .env — must be GATEWAY_V8_URL (8108), not GATEWAY_URL (8107 / S7 loop only)
+GATEWAY_V8_URL=http://127.0.0.1:8108
+```
+
+Pins: `agent_routing.yaml`. If the gateway returns 5xx, `SkillLLMClient` retries then falls back to Gemini. Use **Session8StartingCodePatched** (not the older starting zip with the known gateway bug many students hit).
+
+---
+
+## Part 2 — Custom parallel fan-out (≥3 concurrent researchers)
+
+| Id | Query | Verification |
+|----|-------|--------------|
+| P | Find the current population of Tokyo, Mumbai, and São Paulo and tell me which city has the largest population. | Planner emits 3 researcher nodes in one wave; `analyze_session_timing.py` shows `parallel_confirmed=true` (wall ≈ max branch, not sum) |
+
+---
+
+## Part 3 — Critic pass + fail with recovery
+
+| Id | Query | Expected |
+|----|-------|----------|
+| C_pass | Validate JSON `{"author":"Ada Lovelace","title":"Notes","year":1843}` — critic verifies keys `author,title,year` via `validate_json_keys` | Critic **pass** → formatter |
+| C_fail | Same but JSON missing `year` — critic must fail, recovery planner adds field | Critic **fail** → recovery planner node in session graph |
+
+Critic tools: `validate_json_keys`, `count_syllables` in `cognitive_dag/mcp_server.py`.
+
+---
+
+## Part 4 — Coder + SandboxExecutor
+
+| Id | Query | Expected |
+|----|-------|----------|
+| M | What is the exact integer value of `(17 * 23 - 4) ** 2 + 1000`? Use coder to compute; sandbox must verify. | DAG: planner → coder → sandbox_executor → formatter; answer **150769** |
+
+Coder prompt: `prompts/coder.md` (JSON `{code, summary}` for SandboxExecutor).
+
+---
+
+## Part 5 — New skill: calculator
+
+| Item | Location |
+|------|----------|
+| Skill yaml | `agent_config.yaml` → `calculator` |
+| Prompt | `prompts/calculator.md` |
+| Tool | `safe_calculate` in `mcp_server.py` |
+| Demo query | **CALC** — `(987654321 ** 0) + ((17 * 23 + 41) / 7)` → **≈ 62.714** |
+
+No Executor modification required.
+
+---
+
+## YouTube demo checklist
+
+Record one walkthrough showing:
+
+1. Base query **hello** (minimal DAG)
+2. Parallel query **P** + timing script output
+3. Critic **C_pass** then **C_fail** with recovery node in graph
+4. Coder query **M** with sandbox stdout
+5. Calculator query **CALC**
+
+Link the video in README § Demo.

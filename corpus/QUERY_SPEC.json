@@ -1,0 +1,57 @@
+{
+  "corpus_path": "research_papers",
+  "corpus_description": "Fifty recent arXiv papers (cs.LG / cs.CL / cs.AI) with PDF + markdown sidecars.",
+  "requirements": {
+    "must_pass_indexed": true,
+    "must_fail_no_corpus": true,
+    "semantic_recall_min": 2,
+    "description": "Each query must answer correctly with the index and fail without it. At least two require semantic recall where query wording does not appear verbatim in answering chunks."
+  },
+  "queries": [
+    {
+      "id": "r1",
+      "kind": "semantic",
+      "title": "SkillOpt external skill memory",
+      "query": "In my indexed research library, which work treats an agent skill as trainable external memory updated through scored rollouts rather than weight fine-tuning?",
+      "answer_terms": ["SkillOpt", "skill", "validation", "optimizer"],
+      "target_paper": "2605.23904",
+      "semantic_note": "Paraphrases SkillOpt; avoids 'text-space', 'frozen agent', and 'add/delete/replace'."
+    },
+    {
+      "id": "r2",
+      "kind": "semantic",
+      "title": "AutoResearchClaw failure-as-signal",
+      "query": "Which indexed paper treats failed experiment executions as informative feedback rather than terminal errors in a multi-agent autonomous research workflow?",
+      "answer_terms": ["AutoResearchClaw", "Pivot", "Refine", "self-healing", "failure"],
+      "target_paper": "2605.20025",
+      "semantic_note": "Semantic paraphrase of the Pivot/Refine loop; avoids exact 'pivot-or-refine' phrasing from the abstract."
+    },
+    {
+      "id": "r3",
+      "kind": "keyword",
+      "title": "Sleep-like LM consolidation",
+      "query": "What do my indexed papers say about sleep-like consolidation that writes recent context into fast weights before clearing the KV cache?",
+      "answer_terms": ["sleep", "fast weight", "consolidation", "KV cache"],
+      "target_paper": "2605.26099",
+      "semantic_note": "Keyword anchor on Language Models Need Sleep (2605.26099)."
+    },
+    {
+      "id": "r4",
+      "kind": "cross-doc",
+      "title": "Retrieval + generation synthesis",
+      "query": "Across my indexed arXiv library, how do recent works combine retrieval with generation for grounded question answering or detection?",
+      "answer_terms": ["Chilean", "Medical Checker", "hybrid dense", "Checker-Guided RAG"],
+      "target_paper": "multiple",
+      "semantic_note": "Cross-document synthesis; terms are corpus-specific (2605.26019 Chilean ToS RAG + 2605.25988 medical checker RAG)."
+    },
+    {
+      "id": "r5",
+      "kind": "semantic",
+      "title": "Info-Synth preference queries",
+      "query": "Which indexed study generates comparison questions using an information-theoretic selection criterion when obtaining trustworthy pairwise user labels is costly?",
+      "answer_terms": ["preference", "mutual information", "Info-Synth", "query synthesis"],
+      "target_paper": "2605.26072",
+      "semantic_note": "Paraphrases Info-Synth; avoids verbatim 'mutual-information objective' from the abstract."
+    }
+  ]
+}
