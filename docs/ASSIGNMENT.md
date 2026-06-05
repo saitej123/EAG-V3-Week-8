@@ -162,4 +162,4 @@ Record one walkthrough showing:
 4. Coder query **M** with sandbox stdout
 5. Prosody analyst query **PROS** (assignment new skill). Mention **calculator** in yaml only — no UI card.
 
-Link the video in README § Demo.
+Video: [YouTube demo](https://www.youtube.com/watch?v=6bLVCm2XcJc) (also linked in README § Demo).

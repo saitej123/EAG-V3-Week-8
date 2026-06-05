@@ -107,7 +107,10 @@ Live runs emit `[UI_SESSION_JSON] {"session_id": "..."}` so the graph tab can fo
 
 ## Demo
 
-**[YouTube demo →](https://youtu.be/YOUR_LINK)** — replace after recording the capability groups below (checklist in [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md)).
+**[YouTube demo →](https://www.youtube.com/watch?v=6bLVCm2XcJc)**
+
+
+walkthrough of all five assignment parts (checklist in [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md)).
 
 ## Demo queries
 
