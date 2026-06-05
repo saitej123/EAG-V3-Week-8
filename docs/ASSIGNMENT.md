@@ -1,6 +1,6 @@
 # DAG Agent Assignment — Results
 
-This document maps each assignment part to **query ids**, **log paths**, and **verification commands**.
+This document maps each assignment part to **query ids** and **verification commands**.
 
 ## Architecture (intact)
 
@@ -27,8 +27,6 @@ uv run pytest tests/test_dag_flow.py tests/test_recovery.py tests/test_worked_qu
 uv run python scripts/dag/run_eval.py --fresh
 ```
 
-Logs land in `logs/dag/<query_id>.log` with a combined `logs/dag/summary.json`.
-
 Parallel timing proof (after query **P** or **I**):
 
 ```bash
@@ -39,15 +37,15 @@ uv run python scripts/dag/analyze_session_timing.py dag_P_<timestamp> --json
 
 ## Part 1 — Base queries (hello, A, I, J, K)
 
-Sanity check plus S7 carryover (no behavioural regression) plus resume. **Traces:** `state/sessions/<session_id>/` (`query.txt`, `graph.json`, `nodes/*.json`). **Logs:** `logs/dag/<id>.log`.
+Sanity check plus S7 carryover (no behavioural regression) plus resume. **Traces:** `state/sessions/<session_id>/` (`query.txt`, `graph.json`, `nodes/*.json`).
 
-| Id | Role | Expected DAG | Wall bound | Log |
-|----|------|--------------|------------|-----|
-| **hello** | Minimum DAG | 2 nodes: planner → formatter only | 15s (lecture: &lt;3s) | `hello.log` |
-| **A** | S7 Shannon Wikipedia | 4+ nodes: researcher → distiller → critic (auto) → formatter | 180s | `A.log` |
-| **I** | Parallel fan-out (canonical) | 7 nodes: 3× researcher ∥ → coder → formatter ∥ sandbox_executor | 120s (lecture ~62s) | `I.log` |
-| **J** | Graceful failure | 2 nodes: planner → formatter (fail-fast; no tools) | 30s | `J.log` |
-| **K** | Resumable execution | Same shape as **I**; kill mid parallel researchers, then resume | 180s | `K.log` |
+| Id | Role | Expected DAG | Wall bound |
+|----|------|--------------|------------|
+| **hello** | Minimum DAG | 2 nodes: planner → formatter only | 15s (lecture: &lt;3s) |
+| **A** | S7 Shannon Wikipedia | 4+ nodes: researcher → distiller → critic (auto) → formatter | 180s |
+| **I** | Parallel fan-out (canonical) | 7 nodes: 3× researcher ∥ → coder → formatter ∥ sandbox_executor | 120s (lecture ~62s) |
+| **J** | Graceful failure | 2 nodes: planner → formatter (fail-fast; no tools) | 30s |
+| **K** | Resumable execution | Same shape as **I**; kill mid parallel researchers, then resume | 180s |
 
 **Query I** (populations) is the Session 8 headline: three researchers finish on the same `asyncio.gather` barrier; token use is scoped per node (contrast with S7 iteration history). After a run:
 

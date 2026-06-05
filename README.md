@@ -14,7 +14,6 @@
   <a href="#quick-start">Quick start</a> ·
   <a href="#web-ui">Web UI</a> ·
   <a href="#demo-queries">Demo queries</a> ·
-  <a href="#eval-results">Eval results</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#tests">Tests</a>
 </p>
@@ -27,13 +26,15 @@ This repo is **Session 8**: a **graph DAG agent** built on top of the Session 7 
 
 ### vs a regular iteration-loop agent
 
-| | **Iteration loop** (`AGENT_MODE=loop`) | **DAG agent** (`AGENT_MODE=dag`, default) |
-|---|----------------------------------------|-------------------------------------------|
-| Control flow | Linear history: Perception → Decision → Action each turn | **NetworkX graph** that grows at runtime |
-| Parallelism | Mostly sequential tool calls | **`asyncio.gather`** on every ready wave |
-| State | Conversation + memory items | **`state/sessions/<id>/`** — `graph.json`, `nodes/*.json`, `query.txt` |
-| Recovery | Retry inside the same loop | **Critic fail → recovery Planner** splices new nodes; **Stop / Resume** from disk |
-| Observability | Live console trace | Trace **plus** live **Graph** tab (status colours, session stats, memory hits) |
+
+|               | **Iteration loop** (`AGENT_MODE=loop`)                   | **DAG agent** (`AGENT_MODE=dag`, default)                                         |
+| ------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Control flow  | Linear history: Perception → Decision → Action each turn | **NetworkX graph** that grows at runtime                                          |
+| Parallelism   | Mostly sequential tool calls                             | **`asyncio.gather`** on every ready wave                                          |
+| State         | Conversation + memory items                              | **`state/sessions/<id>/`** — `graph.json`, `nodes/*.json`, `query.txt`            |
+| Recovery      | Retry inside the same loop                               | **Critic fail → recovery Planner** splices new nodes; **Stop / Resume** from disk |
+| Observability | Live console trace                                       | Trace **plus** live **Graph** tab (status colours, session stats, memory hits)    |
+
 
 ### vs “RAG then answer”
 
@@ -47,7 +48,7 @@ RAG here is **primed once per DAG session** (`memory_hits.json` + FAISS), then i
 - **Tool-grounded Critic** — auto-spliced after `distiller`; `validate_json_keys` / `count_syllables`; fail triggers replan
 - **Coder + SandboxExecutor** — Python verified in a subprocess; formatter quotes sandbox stdout, not guessed math
 - **Skill catalogue** — add skills via `agent_config.yaml` + `prompts/*.md` only (`calculator`, **`prosody_analyst`**); no Executor fork per skill
-- **Assignment corpus** — ten demo queries (parts 1–5) with design blocks, wall-clock bounds, and eval logs under `logs/dag/`
+- **Assignment corpus** — ten demo queries (parts 1–5) with design blocks and wall-clock bounds ([`corpus/dag/ASSIGNMENT.json`](corpus/dag/ASSIGNMENT.json))
 - **Parallel timing proof** — `scripts/dag/analyze_session_timing.py` confirms wall-clock ≈ **max(branch)**, not sum
 
 Deferred production upgrades (hybrid RRF, semantic chunking, mmap FAISS) are documented in [docs/DEFERRALS.md](docs/DEFERRALS.md) — the demo stack is intentionally dense-retrieval + heuristic chunking end-to-end.
@@ -62,7 +63,7 @@ cp .env.example .env   # add GEMINI_API_KEY
 ./scripts/serve.sh
 ```
 
-Open **http://127.0.0.1:8080/**
+Open **[http://127.0.0.1:8080/](http://127.0.0.1:8080/)**
 
 CLI:
 
@@ -71,7 +72,7 @@ uv run python scripts/dag/run_query.py hello
 uv run python scripts/dag/run_query.py --query "Say hello."
 uv run python scripts/dag/run_query.py --resume dag_K_<timestamp>
 
-# Full demo eval → logs/dag/<id>.log + summary.json
+# Run all assignment queries (batch eval)
 uv run python scripts/dag/run_eval.py --fresh
 uv run python scripts/dag/run_eval.py --fresh --ids hello A I J K P C_pass C_fail M PROS
 ```
@@ -87,13 +88,15 @@ Pins: [`agent_routing.yaml`](agent_routing.yaml). Without it, `SkillLLMClient` c
 
 ## Web UI
 
-| Area | What it does |
-|------|----------------|
-| **Chat** | Run any query; streams `[dag]` trace and final answer |
+
+| Area            | What it does                                                                                                                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Chat**        | Run any query; streams `[dag]` trace and final answer                                                                                                                                                                    |
 | **DAG Queries** | Submission order parts **1–5**: base (`hello`–`K`) → parallel (`P`) → critic (`C_pass`/`C_fail`) → coder (`M`) → prosody analyst (`PROS`). Design requirements inline before parts 2–3; cards load verbatim text and run |
-| **Graph** | Full-width **vis-network** view: canvas + sidebar (session stats, node detail on click, FAISS memory hits at run start). Session picker, Refresh, Fit, optional auto-refresh during a live run |
-| **Documents** | Upload / bulk-index `research_papers/` or `papers/` (RAG corpus for retriever) |
-| **RAG** | Custom recall queries (iteration-loop corpus; optional) |
+| **Graph**       | Full-width **vis-network** view: canvas + sidebar (session stats, node detail on click, FAISS memory hits at run start). Session picker, Refresh, Fit, optional auto-refresh during a live run                           |
+| **Documents**   | Upload / bulk-index `research_papers/` or `papers/` (RAG corpus for retriever)                                                                                                                                           |
+| **RAG**         | Custom recall queries (iteration-loop corpus; optional)                                                                                                                                                                  |
+
 
 Graph API (used by the UI):
 
@@ -111,13 +114,15 @@ Live runs emit `[UI_SESSION_JSON] {"session_id": "..."}` so the graph tab can fo
 Full verification commands: **[docs/ASSIGNMENT.md](docs/ASSIGNMENT.md)**  
 Corpus (verbatim queries + bounds): [`corpus/dag/ASSIGNMENT.json`](corpus/dag/ASSIGNMENT.json)
 
-| Part | Assignment requirement | Query ids | Screenshots |
-|------|------------------------|-----------|-------------|
-| **1** | Pass five base queries verbatim, within iteration and wall-clock bounds | `hello`, `A`, `I`, `J`, `K` | `Images/DAG/1`–`5` |
-| **2** | Parallel fan-out: ≥3 independent sub-tasks; wall-clock ≈ **max(branch)**, not sum | `P` | `Images/DAG/6` |
-| **3** | Critic verdict: tool-verified pass **and** fail; fail splices recovery planner | `C_pass`, `C_fail` | `Images/DAG/7`–`8` |
-| **4** | Coder prompt → SandboxExecutor; computation formatter cannot do from text | `M` | `Images/DAG/9` |
-| **5** | One new skill (yaml + prompt only); one query; orchestrator unchanged | `PROS` | `Images/DAG/10` |
+
+| Part  | Assignment requirement                                                            | Query ids                   | Screenshots        |
+| ----- | --------------------------------------------------------------------------------- | --------------------------- | ------------------ |
+| **1** | Pass five base queries verbatim, within iteration and wall-clock bounds           | `hello`, `A`, `I`, `J`, `K` | `Images/DAG/1`–`5` |
+| **2** | Parallel fan-out: ≥3 independent sub-tasks; wall-clock ≈ **max(branch)**, not sum | `P`                         | `Images/DAG/6`     |
+| **3** | Critic verdict: tool-verified pass **and** fail; fail splices recovery planner    | `C_pass`, `C_fail`          | `Images/DAG/7`–`8` |
+| **4** | Coder prompt → SandboxExecutor; computation formatter cannot do from text         | `M`                         | `Images/DAG/9`     |
+| **5** | One new skill (yaml + prompt only); one query; orchestrator unchanged             | `PROS`                      | `Images/DAG/10`    |
+
 
 ---
 
@@ -125,13 +130,15 @@ Corpus (verbatim queries + bounds): [`corpus/dag/ASSIGNMENT.json`](corpus/dag/AS
 
 Pass the five base queries from this session **verbatim**, within the wall-clock bound on each card. Run in order from the **DAG Queries** tab (or `uv run python scripts/dag/run_query.py <id>`).
 
-| Id | Query (verbatim) | Bound | Expected DAG |
-|----|------------------|-------|--------------|
-| **hello** | Say hello. | 15s | planner → formatter (2 nodes) |
-| **A** | Fetch https://en.wikipedia.org/wiki/Claude_Shannon and tell me his birth date, death date, and three key contributions to information theory. | 180s | planner → researcher → distiller → critic → formatter |
-| **I** | Find the populations of London, Paris, Berlin and tell me which two are closest in size. | 120s | 3× researcher ∥ → coder → formatter (+ sandbox_executor) |
-| **J** | Read /nonexistent/path.txt and tell me what's in it. | 30s | planner → formatter (fail-fast, no tools) |
-| **K** | For Lagos, Cairo, and Kinshasa, find current populations and growth rates and tell me which is growing fastest. | 180s | Same parallel shape as **I**; demo kill + **Resume** |
+
+| Id        | Query (verbatim)                                                                                                                                                                              | Bound | Expected DAG                                             |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | -------------------------------------------------------- |
+| **hello** | Say hello.                                                                                                                                                                                    | 15s   | planner → formatter (2 nodes)                            |
+| **A**     | Fetch [https://en.wikipedia.org/wiki/Claude_Shannon](https://en.wikipedia.org/wiki/Claude_Shannon) and tell me his birth date, death date, and three key contributions to information theory. | 180s  | planner → researcher → distiller → critic → formatter    |
+| **I**     | Find the populations of London, Paris, Berlin and tell me which two are closest in size.                                                                                                      | 120s  | 3× researcher ∥ → coder → formatter (+ sandbox_executor) |
+| **J**     | Read /nonexistent/path.txt and tell me what's in it.                                                                                                                                          | 30s   | planner → formatter (fail-fast, no tools)                |
+| **K**     | For Lagos, Cairo, and Kinshasa, find current populations and growth rates and tell me which is growing fastest.                                                                               | 180s  | Same parallel shape as **I**; demo kill + **Resume**     |
+
 
 <p align="center">
   <strong>hello</strong><br/>
@@ -177,8 +184,9 @@ Pass the five base queries from this session **verbatim**, within the wall-clock
 
 Design one query with **≥3 independent sub-tasks** that the Planner emits as **concurrent nodes** in one wave. Verify the parallel layer's wall-clock is the **maximum of the branches**, not the sum.
 
-| Id | Query | Verification |
-|----|-------|--------------|
+
+| Id    | Query                                                                                                          | Verification                                                                                               |
+| ----- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | **P** | Find the current population of Tokyo, Mumbai, and São Paulo and tell me which city has the largest population. | `uv run python scripts/dag/analyze_session_timing.py dag_P_<timestamp> --json` → `parallel_confirmed=true` |
 
 <p align="center">
@@ -193,10 +201,12 @@ Design one query with **≥3 independent sub-tasks** that the Planner emits as *
 
 Choose a property the Critic can verify with its tools (`validate_json_keys` on keys `author`, `title`, `year`). Run **both** queries: pass on **C_pass**; fail + recovery planner on **C_fail**.
 
-| Id | Query | Expected |
-|----|-------|----------|
-| **C_pass** | Validate JSON `{"author":"Ada Lovelace","title":"Notes","year":1843}` — critic verifies keys via `validate_json_keys` | Critic **pass** → formatter |
-| **C_fail** | Same JSON but **missing `year`** — on fail, replan with year added | Critic **fail** → recovery planner → corrected JSON |
+
+| Id         | Query                                                                                                                 | Expected                                            |
+| ---------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **C_pass** | Validate JSON `{"author":"Ada Lovelace","title":"Notes","year":1843}` — critic verifies keys via `validate_json_keys` | Critic **pass** → formatter                         |
+| **C_fail** | Same JSON but **missing `year`** — on fail, replan with year added                                                    | Critic **fail** → recovery planner → corrected JSON |
+
 
 <p align="center">
   <strong>C_fail — recovery splice</strong><br/>
@@ -218,8 +228,9 @@ Choose a property the Critic can verify with its tools (`validate_json_keys` on 
 
 `prompts/coder.md` emits Python JSON `{code, summary}` for the SandboxExecutor. Query **M** requires exact integer arithmetic the Formatter cannot reliably do from text alone.
 
-| Id | Query | Expected |
-|----|-------|----------|
+
+| Id    | Query                                                                                                      | Expected                                                          |
+| ----- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | **M** | What is the exact integer value of `(17 * 23 - 4) ** 2 + 1000`? Use coder to compute; sandbox must verify. | planner → coder → sandbox_executor → formatter; answer **150769** |
 
 <p align="center">
@@ -235,9 +246,9 @@ Choose a property the Critic can verify with its tools (`validate_json_keys` on 
 
 Add **`prosody_analyst`** to `agent_config.yaml` + `prompts/prosody_analyst.md` (skill the catalogue did not cover). One UI query exercises it. **Orchestrator unchanged** — `calculator` also remains in the catalogue (no DAG Queries card; use Chat for arithmetic).
 
-| Item | Location |
-|------|----------|
-| New skill | `prosody_analyst` + `count_syllables` |
+| Item       | Location                                                             |
+| ---------- | -------------------------------------------------------------------- |
+| New skill  | `prosody_analyst` + `count_syllables`                                |
 | Demo query | **PROS** — three lines; Line **B** wins (A=11, B=17, C=13 syllables) |
 
 <p align="center">
@@ -245,27 +256,6 @@ Add **`prosody_analyst`** to `agent_config.yaml` + `prompts/prosody_analyst.md` 
   <img src="Images/DAG/10_b.png" width="32%" alt="PROS trace"/>
   <img src="Images/DAG/10_c.png" width="32%" alt="PROS answer"/>
 </p>
-
----
-
-### Eval results
-
-Reproduce locally with `uv run python scripts/dag/run_eval.py --fresh`. Logs: `logs/dag/<id>.log` · combined `logs/dag/summary.json` · traces: `state/sessions/<session_id>/` (includes `memory_hits.json` when FAISS priming ran).
-
-| Group | Id | Log | Status | Wall (s) | Bound (s) | Notes |
-|-------|-----|-----|--------|----------|-----------|-------|
-| Base | hello | [`logs/dag/hello.log`](logs/dag/hello.log) | ok | 12.6 | 15 | 2-node DAG (planner → formatter) |
-| Base | A | `logs/dag/A.log` | — | — | 180 | Run eval to generate |
-| Base | I | `logs/dag/I.log` | — | — | 120 | Canonical parallel fan-out (3 researchers) |
-| Base | J | [`logs/dag/J.log`](logs/dag/J.log) | ok | 9.6 | 30 | Fail-fast planner → formatter |
-| Base | K | `logs/dag/K.log` | — | — | 180 | Requires kill + `--resume` demo |
-| Parallel | P | `logs/dag/P.log` | — | — | 120 | + `analyze_session_timing.py` |
-| Critic | C_pass | [`logs/dag/C_pass.log`](logs/dag/C_pass.log) | ok | 40.1 | 60 | Critic pass (`validate_json_keys`) |
-| Critic | C_fail | `logs/dag/C_fail.log` | — | — | 90 | Critic fail → recovery planner |
-| Coder | M | [`logs/dag/M.log`](logs/dag/M.log) | ok | 21.3 | 60 | Answer **150769** |
-| Prosody analyst | PROS | `logs/dag/PROS.log` | — | — | 60 | Three-line syllable compare; B=17 wins |
-
-Structural shapes (no live LLM): `tests/test_worked_queries.py`. Recovery classifier: `tests/test_recovery.py`.
 
 ## Architecture
 
@@ -282,15 +272,17 @@ USER_QUERY
                                    └──────────────────────────────┘
 ```
 
-| Component | Location |
-|-----------|----------|
-| Graph + Executor + `DagAgent` | `cognitive_dag/flow.py` |
-| Graph viz (API / UI) | `cognitive_dag/graph_viz.py` |
-| Skill catalogue | `agent_config.yaml` + `prompts/*.md` |
-| Critic splice | Auto on `distiller` out-edges (`critic: true`) |
-| Recovery | `cognitive_dag/recovery.py` → `classify_failure` |
-| Persistence | `state/sessions/<sid>/` (`graph.json`, `nodes/*.json`, `query.txt`, `memory_hits.json`) |
-| LLM | Gemini SDK default; optional `GATEWAY_V8_URL` |
+
+| Component                     | Location                                                                                |
+| ----------------------------- | --------------------------------------------------------------------------------------- |
+| Graph + Executor + `DagAgent` | `cognitive_dag/flow.py`                                                                 |
+| Graph viz (API / UI)          | `cognitive_dag/graph_viz.py`                                                            |
+| Skill catalogue               | `agent_config.yaml` + `prompts/*.md`                                                    |
+| Critic splice                 | Auto on `distiller` out-edges (`critic: true`)                                          |
+| Recovery                      | `cognitive_dag/recovery.py` → `classify_failure`                                        |
+| Persistence                   | `state/sessions/<sid>/` (`graph.json`, `nodes/*.json`, `query.txt`, `memory_hits.json`) |
+| LLM                           | Gemini SDK default; optional `GATEWAY_V8_URL`                                           |
+
 
 **Rules:** new skill = yaml + prompt only; Planner emits the graph; touching Executor for non-generic behavior is a bug.
 
@@ -315,7 +307,7 @@ USER_QUERY
 ├── scripts/dag/             # run_eval, run_query, analyze_session_timing
 ├── docs/ASSIGNMENT.md       # Detailed verification guide
 ├── docs/DEFERRALS.md
-├── logs/dag/                # Eval logs (gitignored)
+├── Images/DAG/              # Demo query screenshots (README)
 ├── state/sessions/          # Persisted DAG runs (gitignored)
 └── tests/
 ```
@@ -351,4 +343,3 @@ uv run python scripts/index_research_corpus.py
 ```
 
 Design simplifications and forward pointers: [docs/DEFERRALS.md](docs/DEFERRALS.md)
-
