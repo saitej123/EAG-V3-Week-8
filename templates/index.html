@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
-    <script src="/static/dag-graph.js"></script>
+    <script src="/static/dag-graph.js?v=2"></script>
     <style>
         :root {
             --background: #ffffff;
@@ -292,6 +292,11 @@
             background: #fef3c7;
             color: #b45309;
             border-color: #fcd34d;
+        }
+        .case-badge.prosody {
+            background: #fce7f3;
+            color: #be185d;
+            border-color: #f9a8d4;
         }
         .dag-design-block {
             flex-shrink: 0;
@@ -932,6 +937,13 @@
             font-weight: 600;
             margin-top: 0.2rem;
         }
+        .chat-stream-line.chat-stream-waiting {
+            color: #a1a1aa;
+            font-style: italic;
+        }
+        .chat-stream-line.dag {
+            color: #0f766e;
+        }
         .chat-stream-line.role { color: #27272a; }
         @keyframes stream-line-in {
             from { opacity: 0; transform: translateY(4px); }
@@ -1014,6 +1026,24 @@
             cursor: not-allowed;
             transform: none;
             box-shadow: none;
+        }
+        .btn-composer-stop {
+            background: #fff;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        }
+        .btn-composer-stop:hover:not(:disabled) {
+            background: #fef2f2;
+            border-color: #f87171;
+            transform: translateY(-1px);
+        }
+        .btn-composer-stop:active:not(:disabled) {
+            transform: translateY(0);
+        }
+        .btn-composer-stop:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
         }
         .btn-composer-clear {
             background: #fff;
@@ -1624,7 +1654,7 @@
             </div>
 
             <div id="panelTestCases" role="tabpanel" aria-labelledby="tabTestCasesBtn" class="hidden p-4 flex flex-col gap-2 min-h-0">
-                <p class="text-xs leading-snug text-slate-500 shrink-0">Submission order: parts 1–5 (base → parallel → critic → coder → calculator). Query <strong>A</strong> uses one live <code class="text-[10px]">fetch_url</code> (Tavily/Gemini search not used for explicit URLs). Logs in <code class="text-[10px]">logs/dag/</code></p>
+                <p class="text-xs leading-snug text-slate-500 shrink-0">Submission order: parts 1–5 (base → parallel → critic → coder → prosody analyst). Query <strong>A</strong> uses one live <code class="text-[10px]">fetch_url</code>. Logs in <code class="text-[10px]">logs/dag/</code></p>
                 <div id="dagQueriesScroll" class="dag-queries-scroll scrollbar-thin flex flex-col gap-1 min-h-0" tabindex="0" aria-label="DAG query list">
                     <div id="testCaseList" class="flex flex-col shrink-0">
                         <p class="text-xs text-slate-400 py-4 text-center">Loading DAG queries…</p>
@@ -1692,6 +1722,10 @@
                         <button id="runBtn" type="button" class="btn-composer btn-composer-send">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
                             Send
+                        </button>
+                        <button id="stopAgentBtn" type="button" class="btn-composer btn-composer-stop" hidden title="Stop agent run">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+                            Stop
                         </button>
                         <button id="clearIntentBtn" type="button" class="btn-composer btn-composer-clear">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -1889,6 +1923,7 @@
 (function () {
     const logsDiv = document.getElementById('logs');
     const runBtn = document.getElementById('runBtn');
+    const stopAgentBtn = document.getElementById('stopAgentBtn');
     const clearBtn = document.getElementById('clearBtn');
     const clearIntentBtn = document.getElementById('clearIntentBtn');
     const queryInput = document.getElementById('query');
@@ -2079,8 +2114,18 @@
     /** Dedupe: agent logs both >>> FINAL ANSWER <<< and [UI_RESULT_JSON] for the same text. */
     let lastRenderedResult = '';
 
+    let stopAgentInFlight = false;
+
     function syncComposerControls() {
-        if (runBtn) runBtn.disabled = agentRunActive || indexJobActive;
+        const running = agentRunActive || serverAgentBusy;
+        if (runBtn) {
+            runBtn.disabled = running || indexJobActive;
+            runBtn.hidden = running;
+        }
+        if (stopAgentBtn) {
+            stopAgentBtn.hidden = !running;
+            stopAgentBtn.disabled = !running || indexJobActive || stopAgentInFlight;
+        }
     }
 
     function setIndexBusy(busy) {
@@ -2212,7 +2257,7 @@
         const sid = body.session_id || activeDagSessionId;
         if (sid) activeDagSessionId = sid;
         serverAgentBusy = !!body.agent_busy;
-        if (!opts.keepAgentRunActive && (body.run_complete || (!serverAgentBusy && agentRunActive))) {
+        if (!opts.keepAgentRunActive && body.run_complete) {
             agentRunActive = false;
             clearAgentRunWatchdog();
             syncComposerControls();
@@ -2221,6 +2266,8 @@
         if (dagGraphCtrl && dagGraphCtrl._lastSession !== activeDagSessionId) {
             dagGraphCtrl._didInitialFit = false;
             dagGraphCtrl.prevStatus = {};
+            dagGraphCtrl._nodeIds = [];
+            dagGraphCtrl._lastNodeCount = 0;
             dagGraphCtrl._lastSession = activeDagSessionId;
         }
         if (dagGraphSessionSelect && activeDagSessionId) {
@@ -2260,37 +2307,79 @@
         if (selectedDagNodeId) showDagNodeDetail(selectedDagNodeId);
     }
 
-    async function stopDagAgentRun() {
-        const sid =
-            (dagGraphSessionSelect && dagGraphSessionSelect.value) || activeDagSessionId || '';
+    async function stopAgentRun(opts) {
+        opts = opts || {};
+        if (stopAgentInFlight) return;
+        if (!agentRunActive && !serverAgentBusy && !opts.force) return;
+        stopAgentInFlight = true;
+        syncComposerControls();
         if (dagGraphStopBtn) {
             dagGraphStopBtn.disabled = true;
             dagGraphStopBtn.textContent = 'Stopping…';
         }
-        appendLog('[UI] Stop run — cancelling all parallel nodes on server…');
+        if (stopAgentBtn) stopAgentBtn.textContent = 'Stopping…';
+        appendLog('[UI] Stop — cancelling agent on server…');
         dagRunMode = 'stopped';
         syncDagRunModeUI();
+        let body = {};
         try {
-            await unlockDagServerIfStuck();
-            if (sid) await refreshDagGraph(sid, { force: true });
+            const res = await fetch('/api/agent/stop', { method: 'POST' });
+            body = await res.json().catch(function () {
+                return {};
+            });
+            if (!res.ok || body.status !== 'success') {
+                throw new Error((body && body.detail) || 'Stop failed');
+            }
+            serverAgentBusy = !!body.agent_busy;
+            if (body.session_id) activeDagSessionId = body.session_id;
+            appendLog('[UI] Agent stopped' + (body.cancelled ? ' (task cancelled)' : ' (was idle)'));
+        } catch (err) {
+            appendLog('[UI] Stop failed — ' + (err.message || err));
+            setFormHint('Could not stop agent — try again.');
+            stopAgentInFlight = false;
+            syncComposerControls();
+            if (dagGraphStopBtn) {
+                dagGraphStopBtn.textContent = 'Stop run';
+                dagGraphStopBtn.disabled = false;
+            }
+            if (stopAgentBtn) stopAgentBtn.textContent = 'Stop';
+            return;
         } finally {
+            stopAgentInFlight = false;
+            if (stopAgentBtn) stopAgentBtn.textContent = 'Stop';
             if (dagGraphStopBtn) {
                 dagGraphStopBtn.textContent = 'Stop run';
                 dagGraphStopBtn.disabled = false;
             }
         }
+        agentRunActive = false;
         resetRunButton();
         dagRunMode = 'stopped';
+        appendChatMessage('assistant', 'Run stopped. Open **Graph** and click **Resume** to continue from the checkpoint.', {
+            system: true,
+        });
+        setFormHint('Run stopped — you can send a new query or Resume on the Graph tab.');
+        const sid =
+            body.session_id ||
+            activeDagSessionId ||
+            (dagGraphSessionSelect && dagGraphSessionSelect.value) ||
+            '';
+        if (sid) {
+            if (dagGraphSessionSelect) dagGraphSessionSelect.value = sid;
+            await refreshDagGraph(sid, { force: true }).catch(function () { /* ignore */ });
+        }
         syncDagRunModeUI(lastDagGraphPayload);
         syncDagResumeButton();
         const sc =
             (lastDagGraphPayload && lastDagGraphPayload.stats && lastDagGraphPayload.stats.status_counts) ||
             {};
-        let msg = 'Run stopped — checkpoint saved on disk.';
-        if (sc.running) msg += ' ' + sc.running + ' running → pending.';
-        else if (sc.pending) msg += ' Click Resume (not Send) to continue.';
+        let msg = 'Run stopped — checkpoint on disk.';
+        if (sc.pending) msg += ' ' + sc.pending + ' pending — Resume on Graph to continue.';
         setDagGraphStatus(msg, false);
-        setFormHint('Stopped. Use Resume on the graph to continue this session.');
+    }
+
+    async function stopDagAgentRun() {
+        await stopAgentRun({ force: true });
     }
 
     async function unlockDagServerIfStuck() {
@@ -2305,6 +2394,7 @@
                     syncComposerControls();
                     setAgentStatus(false);
                 }
+                if (body.session_id) activeDagSessionId = body.session_id;
                 syncDagResumeButton();
                 return !serverAgentBusy;
             }
@@ -2547,7 +2637,8 @@
 
     function isAgentStreamLine(msg) {
         if (!msg || !msg.trim()) return false;
-        if (msg.includes('[UI_RESULT_JSON]') || msg.includes('[UI]')) return false;
+        if (msg.includes('[UI_RESULT_JSON]') || msg.includes('[UI_SESSION_JSON]')) return false;
+        if (/^\[UI\]/.test(msg.trim())) return false;
         if (
             msg.includes('>>> FINAL ANSWER <<<') ||
             /\[agent\] RUN_COMPLETE/.test(msg) ||
@@ -2555,24 +2646,29 @@
         ) {
             return false;
         }
+        if (/\[dag\]/.test(msg)) return true;
         return (
             /─── iter \d+ ───/.test(msg) ||
-            /\[memory\.|\[memory\.read\]|\[memory\.remember\]/.test(msg) ||
+            /\[memory\]|\[memory\.|\[memory\.read\]|\[memory\.remember\]/.test(msg) ||
             /\[perception\]/.test(msg) ||
             /\[decision\]/.test(msg) ||
             /\[action\]/.test(msg) ||
             /\[attach\]|\[done\]|^\s+\[(?:open|done)\]/.test(msg) ||
-            /\[dag\].*\((planner|researcher|retriever|distiller|critic|coder|calculator|sandbox_executor|formatter|executor|wave)\)/.test(msg)
+            /\[skills\]/.test(msg) ||
+            /\[MCP\]/.test(msg)
         );
     }
 
     function appendChatStreamLog(msg) {
-        if (!agentRunActive || !chatStreamLogsEl || streamClosing) return;
+        if (!chatStreamLogsEl || streamClosing) return;
         if (!isAgentStreamLine(msg)) return;
+        const waiting = chatStreamLogsEl.querySelector('.chat-stream-waiting');
+        if (waiting) waiting.remove();
         const text = compactStreamMsg(msg);
         const line = document.createElement('div');
         line.className = 'chat-stream-line';
         if (/─── iter/.test(text)) line.classList.add('iter');
+        else if (/\[dag\]/.test(text)) line.classList.add('dag');
         else line.classList.add('role');
         line.textContent = text;
         chatStreamLogsEl.appendChild(line);
@@ -2595,7 +2691,9 @@
             '<div class="chat-avatar" aria-hidden="true">' + ASSISTANT_AVATAR_HTML + '</div>' +
             '<div class="chat-bubble chat-stream-bubble" aria-live="polite" aria-label="Agent progress">' +
             '<div class="chat-stream-head"><span class="chat-stream-pulse"></span><span>Working…</span></div>' +
-            '<div class="chat-stream-logs"></div>' +
+            '<div class="chat-stream-logs">' +
+            '<div class="chat-stream-line role chat-stream-waiting">Waiting for live trace…</div>' +
+            '</div>' +
             '</div>';
         chatMessages.appendChild(row);
         chatTypingEl = row;
@@ -2666,6 +2764,7 @@
     let dagGraphCtrl = null;
     let dagGraphPollTimer = null;
     let dagGraphRefreshInFlight = false;
+    let dagGraphRefreshQueued = false;
     let dagRenderRetryTimer = null;
     let agentRunWatchdogTimer = null;
     const AGENT_RUN_WATCHDOG_MS = 930000;
@@ -2958,7 +3057,7 @@
     function startDagGraphPolling() {
         stopDagGraphPolling();
         if (!dagGraphAutoRefresh || !dagGraphAutoRefresh.checked) return;
-        const live = agentRunActive;
+        const live = agentRunActive || serverAgentBusy;
         if (!live && !dagGraphPanelVisible()) return;
 
         function pollTick() {
@@ -2966,7 +3065,7 @@
                 stopDagGraphPolling();
                 return;
             }
-            if (!agentRunActive && !dagGraphPanelVisible()) {
+            if (!agentRunActive && !serverAgentBusy && !dagGraphPanelVisible()) {
                 stopDagGraphPolling();
                 return;
             }
@@ -2974,21 +3073,13 @@
                 activeDagSessionId ||
                 (dagGraphSessionSelect && dagGraphSessionSelect.value) ||
                 '';
-            void refreshDagGraph(sid || undefined, { live: true })
-                .then(function () {
-                    if (!serverAgentBusy && agentRunActive) {
-                        agentRunActive = false;
-                        syncComposerControls();
-                        setAgentStatus(false);
-                    }
-                })
-                .catch(function () {
-                    /* retry on next tick */
-                });
+            void refreshDagGraph(sid || undefined, { live: true }).catch(function () {
+                /* retry on next tick */
+            });
         }
 
         pollTick();
-        dagGraphPollTimer = setInterval(pollTick, live ? 1000 : 2500);
+        dagGraphPollTimer = setInterval(pollTick, live ? 700 : 2000);
     }
 
     function setDagGraphStatus(msg, isError) {
@@ -3103,25 +3194,51 @@
 
     async function refreshDagGraph(sessionId, opts) {
         opts = opts || {};
-        if (dagGraphRefreshInFlight && !opts.live && !opts.force) return null;
+        if (dagGraphRefreshInFlight) {
+            if (opts.live || opts.force) dagGraphRefreshQueued = true;
+            else return null;
+            return null;
+        }
         const sid =
             (sessionId || '').trim() ||
             (dagGraphSessionSelect && dagGraphSessionSelect.value) ||
             activeDagSessionId ||
             '';
-        const url = dagGraphFetchUrl(sid);
         dagGraphRefreshInFlight = true;
         try {
             if (dagGraphPanelVisible() && !opts.live) {
                 setDagGraphStatus('Loading graph…', false);
             }
-            const res = await fetch(url, {
-                cache: 'no-store',
-                headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
-            });
-            const body = await res.json();
+            async function fetchGraph(forSid) {
+                const res = await fetch(dagGraphFetchUrl(forSid), {
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+                });
+                const body = await res.json();
+                return { res: res, body: body };
+            }
+            let result = await fetchGraph(sid);
+            if (
+                (!result.res.ok || result.body.status !== 'success') &&
+                opts.live &&
+                sid
+            ) {
+                result = await fetchGraph('');
+            }
+            const res = result.res;
+            const body = result.body;
             if (!res.ok || body.status !== 'success') {
-                throw new Error((body && body.detail) || 'Graph load failed');
+                const detail = (body && body.detail) ? String(body.detail) : '';
+                if (opts.live && (agentRunActive || serverAgentBusy)) {
+                    setDagGraphStatus(
+                        detail
+                            ? 'Graph refresh retry… (' + detail.slice(0, 80) + ')'
+                            : 'Waiting for DAG nodes on disk…',
+                        false
+                    );
+                    return null;
+                }
+                throw new Error(detail || 'Graph load failed');
             }
             applyDagGraphPayload(body, { live: opts.live });
             const memN = (body.memory_hits && body.memory_hits.length) || 0;
@@ -3147,10 +3264,21 @@
             setDagGraphStatus(statusLine, false);
             return body;
         } catch (err) {
-            setDagGraphStatus(err.message, true);
+            if (opts.live && (agentRunActive || serverAgentBusy)) {
+                setDagGraphStatus(
+                    'Graph refresh retry…' + (err.message ? ' (' + err.message + ')' : ''),
+                    false
+                );
+            } else {
+                setDagGraphStatus(err.message, true);
+            }
             return null;
         } finally {
             dagGraphRefreshInFlight = false;
+            if (dagGraphRefreshQueued) {
+                dagGraphRefreshQueued = false;
+                void refreshDagGraph(sessionId, { live: true, force: true });
+            }
         }
     }
 
@@ -3181,7 +3309,9 @@
                     }
                     dagGraphSessionSelect.value = activeDagSessionId;
                 }
-                void refreshDagGraph(activeDagSessionId, { live: true }).catch(function (err) {
+                void loadDagSessions(activeDagSessionId).then(function () {
+                    return refreshDagGraph(activeDagSessionId, { live: true, force: true });
+                }).catch(function (err) {
                     setDagGraphStatus(err && err.message ? err.message : 'Graph load failed', true);
                 });
                 if (agentRunActive) startDagGraphPolling();
@@ -3802,7 +3932,7 @@
         if (/\[dag\].*\(planner\)/.test(msg)) steps[0]?.classList.add('active');
         else if (/fetch_url complete|auto tool: fetch_url|\[dag\].*\(researcher\).*tool round 1: fetch_url/.test(msg)) {
             steps[1]?.classList.add('active');
-        } else if (/\[dag\].*\((researcher|retriever|distiller|coder|calculator|sandbox_executor|summariser)\)/.test(msg)) steps[1]?.classList.add('active');
+        } else if (/\[dag\].*\((researcher|retriever|distiller|coder|calculator|prosody_analyst|sandbox_executor|summariser)\)/.test(msg)) steps[1]?.classList.add('active');
         else if (/\[dag\].*\(critic\)/.test(msg)) steps[2]?.classList.add('active');
         else if (/\[dag\].*\(formatter\)|RUN_COMPLETE/.test(msg)) steps[3]?.classList.add('active');
         else if (/\[memory\.|\[memory\.read\]|\[memory\.remember\]/.test(msg)) steps[0]?.classList.add('active');
@@ -3882,6 +4012,7 @@
             text.includes('reason=resume_timeout') ||
             text.includes('reason=resume_failed') ||
             text.includes('reason=dag_resumed') ||
+            text.includes('reason=user_stop') ||
             text.includes('reason=error_abort') ||
             text.includes('[agent] Run failed') ||
             text.includes('Reached max iterations without completion') ||
@@ -3914,7 +4045,7 @@
             let gotResult = consumeUiResultPayload(payload);
             if (!gotResult) gotResult = consumeFinalAnswerPayload(payload);
             appendLog(payload);
-            if (!gotResult && agentRunActive) {
+            if (!gotResult && (agentRunActive || chatStreamLogsEl)) {
                 appendChatStreamLog(plainLogMessage(payload));
             }
             maybeComplete(payload);
@@ -3931,9 +4062,9 @@
     connectSSE();
 
     document.addEventListener('keydown', function (e) {
-        if (e.key !== 'Escape' || !agentRunActive) return;
-        appendLog('[UI] Escape — unlocking UI (agent may still be running on the server).');
-        resetRunButton();
+        if (e.key !== 'Escape' || (!agentRunActive && !serverAgentBusy)) return;
+        e.preventDefault();
+        void stopAgentRun({ force: true });
     });
 
     clearBtn.addEventListener('click', function () {
@@ -4004,6 +4135,10 @@
         appendLog('[UI] Resume session ' + sid + ' (checkpoint: running → pending, continue ready nodes)…');
         lastRenderedResult = '';
         dagRunMode = 'resuming';
+        agentRunActive = true;
+        showTypingIndicator();
+        setAgentStatus(true);
+        syncComposerControls();
         syncDagRunModeUI();
 
         try {
@@ -4030,11 +4165,7 @@
             } else if (body.resume_meta) {
                 applySessionResumeMeta(sid, body.resume_meta);
             }
-            agentRunActive = true;
             serverAgentBusy = true;
-            showTypingIndicator();
-            setAgentStatus(true);
-            syncComposerControls();
             setDagGraphStatus('Resuming from disk (pending nodes)…', false);
             void refreshDagGraph(sid, { live: true, force: true });
             startAgentRunWatchdog();
@@ -4074,9 +4205,11 @@
         lastRenderedResult = '';
         dagRunMode = 'new_run';
         agentRunActive = true;
+        serverAgentBusy = true;
         showTypingIndicator();
         setAgentStatus(true);
         syncComposerControls();
+        if (dagGraphAutoRefresh && dagGraphAutoRefresh.checked) startDagGraphPolling();
 
         const payload = { query: query };
         if (pendingDagQueryId) {
@@ -4119,6 +4252,13 @@
     }
 
     runBtn.addEventListener('click', startAgentRun);
+
+    if (stopAgentBtn) {
+        stopAgentBtn.addEventListener('click', function () {
+            if (stopAgentBtn.disabled) return;
+            void stopAgentRun({ force: true });
+        });
+    }
 
     queryInput.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -4476,6 +4616,25 @@
                 actions.appendChild(run);
             }
         }
+        if (dq.kind === 'new_skill' && dq.query_id) {
+            const qrow = queriesById[dq.query_id];
+            if (!qrow && actions) {
+                actions.innerHTML =
+                    '<span class="text-[10px] text-red-600">Missing query ' +
+                    escapeHtml(dq.query_id) +
+                    ' in catalog</span>';
+            }
+            if (qrow && actions) {
+                const run = document.createElement('button');
+                run.type = 'button';
+                run.className = 'dag-design-run primary';
+                run.textContent = 'Run ' + dq.query_id + ' (new skill)';
+                run.addEventListener('click', function () {
+                    loadDagQueryIntoComposer(qrow.query, true, dq.query_id);
+                });
+                actions.appendChild(run);
+            }
+        }
         if (dq.kind === 'critic' && dq.query_ids) {
             dq.query_ids.forEach(function (qid, idx) {
                 const qrow = queriesById[qid];
@@ -4569,6 +4728,8 @@
             badgeClass += ' parallel';
         } else if (q.featured === 'critic_design' || q.critic_expect) {
             badgeClass += ' critic';
+        } else if (q.featured === 'prosody_design' || (q.expected_skills && q.expected_skills.indexOf('prosody_analyst') >= 0)) {
+            badgeClass += ' prosody';
         }
         const hintText = dagQueryHint(q);
         const uiHint = hintText

@@ -629,6 +629,8 @@ class Executor:
                         metadata=dict(nd.get("metadata") or {}),
                     )
                 _log_node(node_id, skill_name, f"extended graph with {len(created)} nodes")
+                if created:
+                    self._persist()
         except asyncio.CancelledError:
             if state.status == NodeStatus.running:
                 state.status = NodeStatus.pending
@@ -700,6 +702,7 @@ class Executor:
             metadata=dict(recovery.metadata),
         )
         _log_node(node_id, skill_name, f"upstream_failure → recovery planner {rid}")
+        self._persist()
 
     def _sync_graph_from_states(self) -> None:
         for nid, st in self.states.items():
@@ -731,6 +734,7 @@ class Executor:
                 error=state.error,
                 elapsed_s=state.elapsed_s,
             )
+            self.store.save_graph(self.graph.dg)
         self.store.save_node_state(state)
 
     async def aclose(self) -> None:

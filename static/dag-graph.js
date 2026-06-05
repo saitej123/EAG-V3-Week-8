@@ -1,5 +1,5 @@
 /**
- * Native SVG DAG graph — no Cytoscape. Updates node colors on every poll from /api/dag/graph.
+ * Native SVG DAG graph — incremental live updates from /api/dag/graph.
  */
 (function (global) {
     'use strict';
@@ -31,6 +31,12 @@
         return { x: p.x + NODE_W / 2, y: p.y + NODE_H / 2 };
     }
 
+    function nodeIds(nodes) {
+        return (nodes || []).map(function (n) {
+            return n.id;
+        });
+    }
+
     function DagGraphController(opts) {
         this.container = opts.container;
         this.onSelect = opts.onSelect || function () {};
@@ -38,6 +44,9 @@
         this.view = { scale: 1, tx: 48, ty: 48 };
         this.payload = null;
         this.prevStatus = {};
+        this._nodeIds = [];
+        this._lastNodeCount = 0;
+        this._lastSession = null;
         this._bound = false;
     }
 
@@ -52,6 +61,10 @@
         if (this.container) this.container.innerHTML = '';
         this.payload = null;
         this.prevStatus = {};
+        this._nodeIds = [];
+        this._lastNodeCount = 0;
+        this._lastSession = null;
+        this._didInitialFit = false;
     };
 
     DagGraphController.prototype.fit = function () {
@@ -138,47 +151,79 @@
         });
     };
 
-    DagGraphController.prototype.render = function (payload) {
+    DagGraphController.prototype._liveBadgeHtml = function (payload) {
+        var runMode = payload._run_mode || '';
+        if (runMode === 'resuming') {
+            return '<span class="dag-live-badge dag-live-resume">● RESUMING</span>';
+        }
+        if (runMode === 'stopped') {
+            return '<span class="dag-live-badge dag-live-stopped">■ STOPPED</span>';
+        }
+        if (runMode === 'new_run' || payload._live) {
+            return '<span class="dag-live-badge dag-live-new">● NEW RUN</span>';
+        }
+        return '';
+    };
+
+    DagGraphController.prototype._syncLiveBadge = function (payload) {
         if (!this.container) return;
-        this._bindOnce();
-        this.payload = payload;
-        const nodes = payload.nodes || [];
-        const edges = payload.edges || [];
-        if (!nodes.length) {
-            this.container.innerHTML =
-                '<p class="dag-graph-empty">No nodes yet — wait for the planner, then Refresh.</p>';
+        var existing = this.container.querySelector('.dag-live-badge');
+        var html = this._liveBadgeHtml(payload);
+        if (!html) {
+            if (existing) existing.remove();
             return;
         }
+        if (existing) {
+            existing.outerHTML = html;
+        } else {
+            this.container.insertAdjacentHTML('afterbegin', html);
+        }
+    };
 
-        let minX = 0;
-        let minY = 0;
-        let maxX = 400;
-        let maxY = 400;
+    DagGraphController.prototype._updateNodesInPlace = function (payload) {
+        const nodes = payload.nodes || [];
+        const ctrl = this;
         nodes.forEach(function (n) {
-            const p = n.position || { x: 0, y: 0 };
-            minX = Math.min(minX, p.x);
-            minY = Math.min(minY, p.y);
-            maxX = Math.max(maxX, p.x + NODE_W);
-            maxY = Math.max(maxY, p.y + NODE_H);
+            const el = ctrl.container.querySelector('.dag-svg-node[data-dag-id="' + n.id + '"]');
+            if (!el) return;
+            const st = statusStyle(n.status);
+            const rect = el.querySelector('rect');
+            if (rect) {
+                rect.setAttribute('fill', st.fill);
+                rect.setAttribute('stroke', st.stroke);
+                rect.setAttribute('stroke-width', String(st.sw));
+            }
+            const prev = ctrl.prevStatus[n.id];
+            const changed = prev !== undefined && prev !== n.status;
+            ctrl.prevStatus[n.id] = n.status;
+            el.classList.remove('dag-svg-pulse', 'dag-svg-flash');
+            if (n.status === 'running') el.classList.add('dag-svg-pulse');
+            if (changed) {
+                el.classList.add('dag-svg-flash');
+                setTimeout(function () {
+                    el.classList.remove('dag-svg-flash');
+                }, 450);
+            }
         });
-        const vbPad = 40;
-        const viewBox =
-            minX -
-            vbPad +
-            ' ' +
-            (minY - vbPad) +
-            ' ' +
-            (maxX - minX + vbPad * 2) +
-            ' ' +
-            (maxY - minY + vbPad * 2);
+        this.payload = payload;
+        this._syncLiveBadge(payload);
+        this.onStatus(
+            nodes.length +
+                '/' +
+                (payload.node_count || nodes.length) +
+                ' nodes · ' +
+                ((payload.edges && payload.edges.length) || 0) +
+                ' edges'
+        );
+    };
 
+    DagGraphController.prototype._buildEdgeSvg = function (nodes, edges) {
         const nodeById = {};
         nodes.forEach(function (n) {
             nodeById[n.id] = n;
         });
-
         let edgeSvg = '';
-        edges.forEach(function (e) {
+        (edges || []).forEach(function (e) {
             const from = nodeById[e.from];
             const to = nodeById[e.to];
             if (!from || !to) return;
@@ -206,7 +251,10 @@
                 y2 +
                 '" marker-end="url(#dag-arrow)"/>';
         });
+        return edgeSvg;
+    };
 
+    DagGraphController.prototype._buildNodeSvg = function (nodes) {
         const ctrl = this;
         let nodeSvg = '';
         nodes.forEach(function (n) {
@@ -254,16 +302,76 @@
                 '</text>' +
                 '</g>';
         });
+        return nodeSvg;
+    };
 
-        var runMode = payload._run_mode || '';
-        var liveBadge = '';
-        if (runMode === 'resuming') {
-            liveBadge = '<span class="dag-live-badge dag-live-resume">● RESUMING</span>';
-        } else if (runMode === 'stopped') {
-            liveBadge = '<span class="dag-live-badge dag-live-stopped">■ STOPPED</span>';
-        } else if (runMode === 'new_run' || payload._live) {
-            liveBadge = '<span class="dag-live-badge dag-live-new">● NEW RUN</span>';
+    DagGraphController.prototype.render = function (payload) {
+        if (!this.container) return;
+        this._bindOnce();
+
+        const sessionId = payload.session_id || '';
+        if (sessionId && sessionId !== this._lastSession) {
+            this._lastSession = sessionId;
+            this._didInitialFit = false;
+            this.prevStatus = {};
+            this._nodeIds = [];
+            this._lastNodeCount = 0;
         }
+
+        const nodes = payload.nodes || [];
+        const edges = payload.edges || [];
+        const ids = nodeIds(nodes);
+        const sameTopology =
+            ids.length === this._nodeIds.length &&
+            ids.every(function (id, i) {
+                return id === this._nodeIds[i];
+            }, this);
+
+        if (!nodes.length) {
+            this.container.innerHTML =
+                '<p class="dag-graph-empty">Waiting for planner… graph updates automatically during the run.</p>';
+            this.payload = payload;
+            this._nodeIds = [];
+            this._lastNodeCount = 0;
+            return;
+        }
+
+        if (sameTopology && this.container.querySelector('.dag-graph-svg')) {
+            this._updateNodesInPlace(payload);
+            return;
+        }
+
+        const prevCount = this._lastNodeCount;
+        const grew = nodes.length > prevCount;
+        this._nodeIds = ids;
+        this._lastNodeCount = nodes.length;
+        this.payload = payload;
+
+        let minX = 0;
+        let minY = 0;
+        let maxX = 400;
+        let maxY = 400;
+        nodes.forEach(function (n) {
+            const p = n.position || { x: 0, y: 0 };
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x + NODE_W);
+            maxY = Math.max(maxY, p.y + NODE_H);
+        });
+        const vbPad = 40;
+        const viewBox =
+            minX -
+            vbPad +
+            ' ' +
+            (minY - vbPad) +
+            ' ' +
+            (maxX - minX + vbPad * 2) +
+            ' ' +
+            (maxY - minY + vbPad * 2);
+
+        const edgeSvg = this._buildEdgeSvg(nodes, edges);
+        const nodeSvg = this._buildNodeSvg(nodes);
+        const liveBadge = this._liveBadgeHtml(payload);
 
         this.container.innerHTML =
             liveBadge +
@@ -280,13 +388,14 @@
             '</g></g></svg>';
 
         this._applyPanTransform();
-        if (!this._didInitialFit) {
+        const selfRef = this;
+        if (!this._didInitialFit || grew) {
             this._didInitialFit = true;
-            const selfRef = this;
             requestAnimationFrame(function () {
                 selfRef.fit();
             });
         }
+
         this.onStatus(
             nodes.length +
                 '/' +
@@ -304,7 +413,6 @@
         const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const img = new Image();
-        const self = this;
         img.onload = function () {
             const canvas = document.createElement('canvas');
             canvas.width = img.width || 1200;

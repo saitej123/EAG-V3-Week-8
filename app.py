@@ -10,6 +10,7 @@ import asyncio
 import os
 import threading
 import uuid
+from typing import Any
 from loguru import logger
 import sys
 from dotenv import load_dotenv
@@ -246,6 +247,36 @@ async def _stop_active_run() -> bool:
     return True
 
 
+async def _stop_agent_run(*, log_user_stop: bool = True) -> dict[str, Any]:
+    """Cancel in-flight agent, checkpoint DAG running nodes → pending, clear busy flags."""
+    cancelled = await _stop_active_run()
+    if not cancelled:
+        _force_end_run()
+    session_id: str | None = None
+    if _agent_mode() == "dag":
+        try:
+            from cognitive_dag.graph_viz import latest_dag_session_id
+            from cognitive_dag.persistence import SessionStore
+
+            sid = latest_dag_session_id()
+            if sid:
+                store = SessionStore(sid)
+                if store.exists():
+                    store.reset_running_to_pending()
+                    session_id = sid
+        except Exception as e:
+            logger.warning(f"[agent] stop: session checkpoint failed: {e}")
+    if cancelled and log_user_stop:
+        logger.info("[agent] RUN_COMPLETE reason=user_stop")
+    return {
+        "status": "success",
+        "cancelled": cancelled,
+        "agent_busy": _is_run_busy(),
+        "index_busy": _is_index_busy(),
+        "session_id": session_id,
+    }
+
+
 def _try_begin_run() -> JSONResponse | None:
     _clear_stale_run_busy()
     with _ops_lock:
@@ -398,18 +429,18 @@ async def run_agent(request: QueryRequest):
     return {"status": "Agent started"}
 
 
+@app.post("/api/agent/stop")
+async def api_agent_stop():
+    """Stop the running agent (user cancel) — like Cursor stop; DAG running nodes → pending on disk."""
+    body = await _stop_agent_run(log_user_stop=True)
+    logger.info(f"[UI] Agent stop requested — cancelled={body.get('cancelled')}")
+    return body
+
+
 @app.post("/api/dag/unlock")
 async def api_dag_unlock():
-    """Stop in-flight agent (if any) and clear agent_busy — use before resume after SIGKILL."""
-    cancelled = await _stop_active_run()
-    if not cancelled:
-        _force_end_run()
-    return {
-        "status": "success",
-        "agent_busy": _is_run_busy(),
-        "index_busy": _is_index_busy(),
-        "cancelled": cancelled,
-    }
+    """Stop in-flight agent (if any) and clear agent_busy — alias for resume/stuck recovery."""
+    return await _stop_agent_run(log_user_stop=False)
 
 
 @app.post("/run-agent/resume")
@@ -771,7 +802,7 @@ async def api_dag_graph(session_id: str | None = None):
 
 @app.get("/api/queries/dag")
 async def api_dag_queries():
-    """Built-in DAG demo queries (hello–K + parallel, critic, coder, calculator)."""
+    """Built-in DAG demo queries (hello–K + parallel, critic, coder, prosody analyst, calculator)."""
     try:
         from cognitive_dag.catalog import assignment_payload, validate_assignment_corpus
 

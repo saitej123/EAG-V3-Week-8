@@ -8,7 +8,7 @@ import time
 
 import networkx as nx
 
-from cognitive_dag.dag_schemas import NodeSpec, NodeState, NodeStatus, PlannerOutput
+from cognitive_dag.dag_schemas import AgentResult, NodeSpec, NodeState, NodeStatus, PlannerOutput
 from cognitive_dag.flow import Graph
 from cognitive_dag.graph_viz import graph_viz_payload, list_dag_sessions
 from cognitive_dag.persistence import SessionStore
@@ -80,6 +80,66 @@ def test_graph_viz_shows_running_from_disk(tmp_path, monkeypatch):
     assert fmt["status"] == "running"
     assert fmt["status_label"] == "run"
     assert payload["stats"]["status_counts"]["running"] == 1
+
+
+def test_graph_viz_agent_result_str_status_on_graph_only(tmp_path, monkeypatch):
+    """Mid-wave poll: graph.json has AgentResult before node state file exists."""
+    from cognitive_dag import persistence as pers_mod
+
+    monkeypatch.setattr(pers_mod, "SESSIONS_DIR", tmp_path / "sessions")
+    sid = "dag_graph_result_only"
+    store = SessionStore(sid)
+    g = nx.DiGraph()
+    g.add_node(
+        "n:4",
+        skill="formatter",
+        label="out",
+        metadata={"label": "out"},
+        result=AgentResult(success=True, agent_name="formatter", status="running"),
+    )
+    store.save_query("test")
+    store.save_graph(g)
+
+    payload = graph_viz_payload(sid)
+    fmt = next(n for n in payload["nodes"] if n["id"] == "n:4")
+    assert fmt["status"] == "running"
+    assert fmt["status_label"] == "run"
+    assert fmt["result_preview"] == "(running…)"
+
+
+def test_api_dag_graph_formatter_running_mid_wave(tmp_path, monkeypatch):
+    """GET /api/dag/graph must not 500 when AgentResult.status is a str (UI live poll)."""
+    from cognitive_dag import persistence as pers_mod
+
+    monkeypatch.setattr(pers_mod, "SESSIONS_DIR", tmp_path / "sessions")
+    sid = "dag_M_api_live"
+    store = SessionStore(sid)
+    g = nx.DiGraph()
+    g.add_node("n:1", skill="planner", label="planner", metadata={"label": "planner"})
+    g.add_node(
+        "n:4",
+        skill="formatter",
+        label="out",
+        metadata={"label": "out"},
+        result=AgentResult(success=True, agent_name="formatter", status="running"),
+    )
+    g.add_edge("n:1", "n:4")
+    store.save_query("test query M")
+    store.save_graph(g)
+
+    from app import app
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    res = client.get(f"/api/dag/graph?session_id={sid}")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "success"
+    assert body["session_id"] == sid
+    fmt = next(n for n in body["nodes"] if n["id"] == "n:4")
+    assert fmt["status"] == "running"
+    assert fmt["status_label"] == "run"
+    assert fmt["color"]["background"] == "#fef3c7"
 
 
 def test_list_dag_sessions_orders_newest(tmp_path, monkeypatch):

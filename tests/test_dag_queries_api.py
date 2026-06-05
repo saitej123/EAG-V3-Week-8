@@ -15,7 +15,7 @@ from cognitive_dag.catalog import (
     validate_assignment_corpus,
 )
 
-EXPECTED_IDS = ["hello", "A", "I", "J", "K", "P", "C_pass", "C_fail", "M", "CALC"]
+EXPECTED_IDS = ["hello", "A", "I", "J", "K", "P", "C_pass", "C_fail", "M", "PROS"]
 
 
 def test_validate_assignment_corpus_clean():
@@ -38,6 +38,8 @@ def test_design_queries_reference_real_ids():
             assert dq["query_id"] in ids
         if dq["kind"] == "critic":
             assert set(dq["query_ids"]).issubset(ids)
+        if dq["kind"] == "new_skill":
+            assert dq["query_id"] in ids
 
 
 def test_groups_cover_all_queries():
@@ -58,7 +60,8 @@ def test_submission_outline_order_matches_checklist():
     assert outline[2]["query_ids"] == ["C_pass", "C_fail"]
     assert outline[2]["design_id"] == "critic_design"
     assert outline[3]["query_ids"] == ["M"]
-    assert outline[4]["query_ids"] == ["CALC"]
+    assert outline[4]["query_ids"] == ["PROS"]
+    assert outline[4]["design_id"] == "prosody_design"
 
 
 @pytest.mark.parametrize("qid", EXPECTED_IDS)
@@ -78,7 +81,7 @@ def test_api_dag_queries_success():
     assert body["status"] == "success"
     assert body["query_count"] == 10
     assert len(body["queries"]) == 10
-    assert len(body["design_queries"]) == 2
+    assert len(body["design_queries"]) == 3
     assert len(body["groups"]) == 5
     assert len(body["outline"]) == 5
     assert body["outline"][0]["query_ids"][0] == "hello"
@@ -116,7 +119,9 @@ def test_api_dag_queries_render_fields_for_ui():
     assert by_id["C_fail"]["critic_expect"] == "fail_then_recovery"
     assert "validate_json_keys" in by_id["C_pass"]["query"]
     assert by_id["M"]["ui_hint"]
-    assert by_id["CALC"]["ui_hint"]
+    assert by_id["PROS"]["ui_hint"]
+    assert by_id["PROS"]["expected_flow"] == "planner → prosody_analyst → formatter"
+    assert "prosody_analyst" in by_id["PROS"]["expected_skills"]
     assert re.search(r"150769", by_id["M"]["ui_hint"])
 
 

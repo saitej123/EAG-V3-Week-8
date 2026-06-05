@@ -7,6 +7,7 @@ agents:
   summariser: {provider: gemini}
   critic: {provider: gemini}
   calculator: {provider: gemini}
+  prosody_analyst: {provider: gemini}
   formatter: {provider: gemini}
   coder: {provider: gemini}
   sandbox_executor: {provider: gemini}

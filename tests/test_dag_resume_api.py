@@ -185,6 +185,20 @@ def test_dag_unlock_clears_busy_flag(tmp_path, monkeypatch):
     assert res.json().get("agent_busy") is False
 
 
+def test_api_agent_stop_clears_busy(tmp_path, monkeypatch):
+    import app as app_mod
+
+    with app_mod._ops_lock:
+        app_mod._run_busy = True
+        app_mod._run_task = None
+    client = TestClient(app_mod.app)
+    res = client.post("/api/agent/stop")
+    assert res.status_code == 200
+    body = res.json()
+    assert body.get("status") == "success"
+    assert body.get("agent_busy") is False
+
+
 def test_resume_endpoint_accepts_resumable_session(tmp_path, monkeypatch):
     import app as app_mod
 

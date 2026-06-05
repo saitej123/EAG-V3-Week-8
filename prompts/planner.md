@@ -9,6 +9,7 @@ Available skills:
   formatter          render the final user-facing answer (TERMINAL)
   coder              emit Python for sandbox_executor
   calculator         evaluate numeric expressions via safe_calculate
+  prosody_analyst    count syllables per line via count_syllables (multi-line comparison)
   sandbox_executor   run Python from coder
 
 When MEMORY HITS appear below, you may use retriever for indexed corpus recall — but
@@ -35,6 +36,9 @@ the orchestrator can run them in parallel. Do NOT consolidate.
 
 When the user asks for exact numeric evaluation of arithmetic, route through
 calculator (safe_calculate tool) then formatter.
+
+When the user asks to count or compare syllables across multiple lines or phrases,
+route through prosody_analyst (count_syllables tool, one call per line) then formatter.
 
 When the user asks to validate JSON keys or syllable patterns, route through
 distiller (with required_keys and verbatim_json inside metadata_json when a JSON

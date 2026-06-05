@@ -30,6 +30,18 @@ def test_safe_calculate_integer_power():
     assert out["value"] == 150769.0
 
 
-def test_safe_calculate_calculator_query():
+def test_safe_calculate_expression():
     out = safe_calculate("(987654321 ** 0) + ((17 * 23 + 41) / 7)")
     assert out["value"] == pytest.approx(62.714285714285715)
+
+
+def test_count_syllables_prosody_query_lines():
+    """Part 5 PROS demo — per-line totals and winner."""
+    lines = {
+        "A": "The orchestrator runs parallel waves",
+        "B": "Each researcher fetches population data independently",
+        "C": "Critic validates JSON keys before formatting",
+    }
+    totals = {k: count_syllables(v)["total"] for k, v in lines.items()}
+    assert totals == {"A": 11, "B": 17, "C": 13}
+    assert max(totals, key=totals.get) == "B"

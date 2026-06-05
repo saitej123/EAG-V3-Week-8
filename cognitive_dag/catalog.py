@@ -128,7 +128,7 @@ def load_assignment_queries() -> list[dict[str, Any]]:
 
 _REQUIRED_QUERY_FIELDS = ("id", "part", "title", "query", "wall_clock_sec")
 _EXPECTED_QUERY_IDS = frozenset(
-    {"hello", "A", "I", "J", "K", "P", "C_pass", "C_fail", "M", "CALC"}
+    {"hello", "A", "I", "J", "K", "P", "C_pass", "C_fail", "M", "PROS"}
 )
 
 
@@ -147,7 +147,7 @@ def _build_submission_outline(spec: dict[str, Any]) -> list[dict[str, Any]]:
             for row in outline
         ]
 
-    part_labels = {1: "Base", 2: "Parallel", 3: "Critic", 4: "Coder", 5: "Calculator"}
+    part_labels = {1: "Base", 2: "Parallel", 3: "Critic", 4: "Coder", 5: "New skill"}
     by_part: dict[int, list[str]] = {}
     for row in spec.get("queries") or []:
         part = int(row.get("part") or 0)
@@ -203,6 +203,10 @@ def validate_assignment_corpus() -> list[str]:
             for ref in dq.get("query_ids") or []:
                 if str(ref) not in by_id:
                     errors.append(f"design_queries {dq.get('id')}: unknown query_id {ref}")
+        elif kind == "new_skill":
+            ref = str(dq.get("query_id") or "")
+            if ref not in by_id:
+                errors.append(f"design_queries {dq.get('id')}: unknown query_id {ref}")
         else:
             errors.append(f"design_queries {dq.get('id')}: unknown kind {kind}")
 

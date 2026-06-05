@@ -51,6 +51,13 @@ skills:
     max_tokens: 1024
     provider: gemini
 
+  prosody_analyst:
+    prompt: prompts/prosody_analyst.md
+    tools: [count_syllables]
+    temperature: 0.0
+    max_tokens: 2048
+    provider: gemini
+
   formatter:
     prompt: prompts/formatter.md
     tools: []

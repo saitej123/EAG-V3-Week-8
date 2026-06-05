@@ -12,7 +12,8 @@ This document maps each assignment part to **query ids**, **log paths**, and **v
 | Critic between flagged producer and successor | Auto-splice on `distiller` (`critic: true`) |
 | Recovery on critic fail | `_handle_critic` → recovery planner via `classify_failure` |
 | Coder → sandbox_executor | `internal_successors: [sandbox_executor]` |
-| New skill = yaml edit only | **calculator** — no Executor changes |
+| New skill = yaml edit only | **prosody_analyst** (Part 5 demo) — no Executor changes |
+| Catalogue skill (no UI card) | **calculator** — yaml + `prompts/calculator.md`; planner routes arithmetic |
 
 Run architecture tests:
 
@@ -105,16 +106,51 @@ Coder prompt: `prompts/coder.md` (JSON `{code, summary}` for SandboxExecutor).
 
 ---
 
-## Part 5 — New skill: calculator
+## Part 5 — New skill: prosody analyst
+
+**Assignment task:** add one skill to `agent_config.yaml` that the existing catalogue did not cover; write its prompt; write **one** query that exercises it. The orchestrator must not need modification (if it did, that would be reportable).
+
+| Item | Location |
+|------|----------|
+| Skill yaml | `agent_config.yaml` → `prosody_analyst` |
+| Prompt | `prompts/prosody_analyst.md` |
+| Planner routing | `prompts/planner.md` — syllable comparison → `prosody_analyst` |
+| Tool | `count_syllables` in `mcp_server.py` (pre-existing; critic also uses it) |
+| **UI demo query** | **PROS** only — three DAG-themed lines; count per line → **B=17** wins (A=11, C=13) |
+
+**Why this skill is new:** the catalogue already had planner, researcher, retriever, distiller, summariser, critic, coder, sandbox_executor, formatter, browser, and **calculator**. None of them perform **multi-line syllable comparison** as a dedicated step. `count_syllables` existed as a critic tool only; `prosody_analyst` gives it a first-class skill + prompt.
+
+**Orchestrator:** no changes to `cognitive_dag/flow.py` — generic `SkillRegistry` dispatch runs `prosody_analyst` like any other skill.
+
+### Calculator — catalogue only (no DAG Queries card)
+
+`calculator` remains in the skill catalogue (`agent_config.yaml`, `prompts/calculator.md`, `safe_calculate` tool). The planner already routes arithmetic through `calculator → formatter`. It does **not** need a separate demo card in the DAG Queries UI — the skill is known to the orchestrator and can be invoked from Chat with any numeric query.
 
 | Item | Location |
 |------|----------|
 | Skill yaml | `agent_config.yaml` → `calculator` |
 | Prompt | `prompts/calculator.md` |
 | Tool | `safe_calculate` in `mcp_server.py` |
-| Demo query | **CALC** — `(987654321 ** 0) + ((17 * 23 + 41) / 7)` → **≈ 62.714** |
+| Example (Chat, not a corpus id) | `(987654321 ** 0) + ((17 * 23 + 41) / 7)` → **≈ 62.714** |
 
-No Executor modification required.
+**Live demo — show (Part 5):**
+
+1. `agent_config.yaml` — both `prosody_analyst` (new) and `calculator` (existing catalogue entry)
+2. Run **PROS** from DAG Queries (Part 5 design block) — this is the assignment query
+3. Graph tab: `planner → prosody_analyst → formatter`
+4. Working panel: three `[dag]` tool calls to `count_syllables`
+5. Final answer: Line **B** has the most syllables (17)
+
+```bash
+uv run python scripts/dag/run_query.py PROS
+# or: uv run python scripts/dag/run_eval.py --fresh --ids PROS
+```
+
+Optional ad-hoc calculator check (Chat composer, not in `corpus/dag/ASSIGNMENT.json`):
+
+```text
+What is the exact numeric value of (987654321 ** 0) + ((17 * 23 + 41) / 7)? Use the calculator skill.
+```
 
 ---
 
@@ -126,6 +162,6 @@ Record one walkthrough showing:
 2. Parallel query **P** + timing script output
 3. Critic **C_pass** then **C_fail** with recovery node in graph
 4. Coder query **M** with sandbox stdout
-5. Calculator query **CALC**
+5. Prosody analyst query **PROS** (assignment new skill). Mention **calculator** in yaml only — no UI card.
 
 Link the video in README § Demo.

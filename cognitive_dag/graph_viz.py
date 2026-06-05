@@ -24,6 +24,7 @@ _SKILL_COLORS: dict[str, str] = {
     "sandbox_executor": "#0d9488",
     "formatter": "#52525b",
     "calculator": "#db2777",
+    "prosody_analyst": "#c026d3",
     "browser": "#0284c7",
 }
 
@@ -66,6 +67,15 @@ def _normalize_status(raw: str) -> str:
     return aliases.get(s, "pending")
 
 
+def _status_raw(status: Any) -> str:
+    """NodeStatus enum and AgentResult.status (plain str) both normalize here."""
+    if status is None:
+        return "pending"
+    if hasattr(status, "value"):
+        return str(status.value)
+    return str(status)
+
+
 def status_ui_label(status: str) -> str:
     return _STATUS_LABEL.get(_normalize_status(status), status)
 
@@ -96,11 +106,10 @@ def _node_status(skill: str, graph: nx.DiGraph, nid: str, states: dict[str, Any]
     """Prefer persisted node state files over embedded graph.result (stale mid-wave)."""
     if nid in states:
         st = states[nid]
-        raw = st.status.value if hasattr(st.status, "value") else str(st.status)
-        return _normalize_status(raw)
+        return _normalize_status(_status_raw(st.status))
     result = graph.nodes[nid].get("result")
     if isinstance(result, AgentResult):
-        return _normalize_status(result.status.value)
+        return _normalize_status(_status_raw(result.status))
     if isinstance(result, dict):
         return _normalize_status(str(result.get("status") or "pending"))
     return "pending"
@@ -127,7 +136,7 @@ def _session_stats(states: dict[str, Any]) -> dict[str, Any]:
     counts = {"complete": 0, "running": 0, "pending": 0, "failed": 0, "skipped": 0}
     wall = 0.0
     for st in states.values():
-        raw = st.status.value if hasattr(st.status, "value") else str(st.status)
+        raw = _normalize_status(_status_raw(st.status))
         if raw in counts:
             counts[raw] += 1
         if getattr(st, "elapsed_s", None):
@@ -160,7 +169,7 @@ def _result_preview(graph: nx.DiGraph, nid: str, states: dict[str, Any]) -> str:
         preview = _preview_text(st.output)
         if preview:
             return preview
-        if getattr(st, "status", None) and str(getattr(st.status, "value", st.status)) == "running":
+        if _normalize_status(_status_raw(getattr(st, "status", None))) == "running":
             return "(running…)"
     result = graph.nodes[nid].get("result")
     if isinstance(result, AgentResult):
@@ -169,6 +178,8 @@ def _result_preview(graph: nx.DiGraph, nid: str, states: dict[str, Any]) -> str:
         preview = _preview_text(result.output)
         if preview:
             return preview
+        if _normalize_status(_status_raw(result.status)) == "running":
+            return "(running…)"
     return "(no output yet)"
 
 
@@ -418,6 +429,23 @@ def latest_dag_session_id() -> str | None:
     return sessions[0]["session_id"] if sessions else None
 
 
+def _merge_graph_with_states(graph: nx.DiGraph, states: dict[str, Any]) -> nx.DiGraph:
+    """Include node state files not yet in graph.json (mid-wave planner extend race)."""
+    merged = graph.copy()
+    for nid, st in states.items():
+        if nid in merged:
+            continue
+        meta = dict(st.metadata or {})
+        merged.add_node(
+            nid,
+            skill=str(st.skill or "?"),
+            label=str(meta.get("label") or nid),
+            metadata=meta,
+            inputs=list(st.inputs or []),
+        )
+    return merged
+
+
 def graph_viz_payload(session_id: str) -> dict[str, Any]:
     """Build Cytoscape-ready nodes/edges from a persisted session."""
     store = SessionStore(session_id)
@@ -428,6 +456,7 @@ def graph_viz_payload(session_id: str) -> dict[str, Any]:
         states = store.load_all_node_states()
     except SessionLoadError:
         states = {}
+    graph = _merge_graph_with_states(graph, states)
 
     nodes: list[dict[str, Any]] = []
     edges: list[dict[str, Any]] = []

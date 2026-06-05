@@ -15,7 +15,7 @@ from cognitive_dag.skills import SkillRegistry
 def test_assignment_corpus_has_all_parts():
     rows = load_assignment_queries()
     ids = {str(r["id"]) for r in rows}
-    assert {"hello", "A", "I", "J", "K", "P", "C_pass", "C_fail", "M", "CALC"}.issubset(ids)
+    assert {"hello", "A", "I", "J", "K", "P", "C_pass", "C_fail", "M", "PROS"}.issubset(ids)
     parts = {int(r["part"]) for r in rows if r.get("part")}
     assert parts == {1, 2, 3, 4, 5}
 
@@ -50,14 +50,19 @@ def test_calculator_skill_registered():
     assert reg.get("calculator").tools_allowed == ["safe_calculate"]
 
 
+def test_prosody_analyst_skill_registered():
+    reg = SkillRegistry()
+    assert reg.get("prosody_analyst").tools_allowed == ["count_syllables"]
+
+
 def test_assignment_payload():
     payload = assignment_payload()
     assert payload["query_count"] >= 10
     assert payload["log_dir"] == "logs/dag"
     design = payload.get("design_queries") or []
-    assert len(design) >= 2
+    assert len(design) >= 3
     kinds = {d["kind"] for d in design}
-    assert "parallel" in kinds and "critic" in kinds
+    assert "parallel" in kinds and "critic" in kinds and "new_skill" in kinds
     assert len(payload.get("groups") or []) == 5
 
 

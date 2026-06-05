@@ -32,9 +32,10 @@
     },
     {
       "part": 5,
-      "title": "New skill (calculator)",
-      "summary": "Skill in agent_config.yaml + prompts/calculator.md; orchestrator unchanged.",
-      "query_ids": ["CALC"]
+      "title": "New skill (prosody analyst)",
+      "summary": "Add one skill yaml + prompt; one query exercises it. Executor unchanged — reportable if it were.",
+      "design_id": "prosody_design",
+      "query_ids": ["PROS"]
     }
   ],
   "design_queries": [
@@ -62,6 +63,20 @@
       ],
       "verify": "Inspect session graph (Graph tab): C_fail session must show a recovery planner node after critic failure.",
       "tools": ["validate_json_keys", "count_syllables"]
+    },
+    {
+      "id": "prosody_design",
+      "kind": "new_skill",
+      "title": "New skill — yaml + prompt only (no Executor change)",
+      "query_id": "PROS",
+      "requirements": [
+        "Add prosody_analyst to agent_config.yaml with tools: [count_syllables] and prompt: prompts/prosody_analyst.md.",
+        "Planner routes multi-line syllable comparison through prosody_analyst → formatter (one count_syllables call per line).",
+        "Executor and flow.py need no skill-specific branch — generic SkillRegistry dispatch only."
+      ],
+      "verify": "Run PROS: graph shows planner → prosody_analyst → formatter; answer names Line B (17 syllables) over A=11, C=13.",
+      "tools": ["count_syllables"],
+      "also_see": "Tool already exists for critic; prosody_analyst is a new catalogue entry with its own prompt and routing."
     }
   ],
   "queries": [
@@ -186,16 +201,18 @@
       "verify_hint": "Graph: planner → coder → sandbox_executor → formatter."
     },
     {
-      "id": "CALC",
+      "id": "PROS",
       "part": 5,
-      "label": "CALC",
-      "title": "Calculator skill",
-      "query": "What is the exact numeric value of (987654321 ** 0) + ((17 * 23 + 41) / 7)? Use the calculator skill.",
-      "wall_clock_sec": 45,
+      "label": "PROS",
+      "title": "Prosody analyst skill",
+      "featured": "prosody_design",
+      "query": "Using the prosody_analyst skill, count syllables for each line below (one count_syllables call per line). Report the total for each line and which line has the most syllables:\nLine A: The orchestrator runs parallel waves\nLine B: Each researcher fetches population data independently\nLine C: Critic validates JSON keys before formatting",
+      "wall_clock_sec": 60,
       "expected_nodes_min": 3,
-      "expected_skills": ["planner", "calculator", "formatter"],
-      "ui_hint": "Uses calculator skill + safe_calculate tool (yaml + prompt only, no Executor change).",
-      "verify_hint": "Expected numeric result ≈ 62.714 (1 + (432/7))."
+      "expected_skills": ["planner", "prosody_analyst", "formatter"],
+      "expected_flow": "planner → prosody_analyst → formatter",
+      "ui_hint": "New skill: agent_config.yaml + prompts/prosody_analyst.md only. Three count_syllables calls, then compare totals.",
+      "verify_hint": "Line B wins: A=11, B=17, C=13 syllables (count_syllables heuristic). No Executor changes."
     }
   ]
 }
